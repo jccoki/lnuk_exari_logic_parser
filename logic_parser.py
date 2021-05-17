@@ -35,7 +35,7 @@ for child in logic_variables:
         question = data.find("Question").text
 
         variables[variable_type][query_id] = {}
-        variables[variable_type][query_id].update({"Layout":layout, "Priority":priority, "Topic":topic, "Question":question})
+        variables[variable_type][query_id].update({"Name":query_name, "DataType":query_type, "Layout":layout, "Priority":priority, "Topic":topic, "Question":question})
         variables[variable_type][query_id]["Responses"] = {}
 
         responses = data.find("Responses")        
@@ -53,7 +53,7 @@ for child in logic_variables:
         question = data.find("Question").text
                 
         variables[variable_type][query_id] = {}
-        variables[variable_type][query_id].update({"Layout":layout, "Priority":priority, "Topic":topic, "Question":question, "Rows":rows, "Columns":columns})
+        variables[variable_type][query_id].update({"Name":query_name, "DataType":query_type, "Layout":layout, "Priority":priority, "Topic":topic, "Question":question, "Rows":rows, "Columns":columns})
 
         #@todo study parsing defaulttext and exampletext
 
@@ -63,7 +63,7 @@ for child in logic_variables:
         explanatory_blurb = data.find("ExplanatoryBlurb") or ""
         parameters = data.find("Parameters")
         variables[variable_type][query_id] = {}
-        variables[variable_type][query_id].update({"PassRepeatIndex":pass_repeat_index,"script":script, "ExplanatoryBlurb":explanatory_blurb})
+        variables[variable_type][query_id].update({"Name":query_name, "DataType":query_type, "PassRepeatIndex":pass_repeat_index,"script":script, "ExplanatoryBlurb":explanatory_blurb})
         variables[variable_type][query_id]["Parameters"] = {}
 
         for parameter in parameters:
