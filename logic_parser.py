@@ -51,11 +51,41 @@ for child in logic_variables:
         columns = data.get("Columns") or ""
         topic = data.find("Topic").text
         question = data.find("Question").text
-                
-        variables[variable_type][query_id] = {}
-        variables[variable_type][query_id].update({"Name":query_name, "DataType":query_type, "Layout":layout, "Priority":priority, "Topic":topic, "Question":question, "Rows":rows, "Columns":columns})
 
-        #@todo study parsing defaulttext and exampletext
+        example_text = ""
+        if data.find("ExampleText") is not None:
+            example_text = data.find("ExampleText").text
+
+        default_text_data = ""        
+        if data.find("DefaultText") is not None:
+            default_text = data.find("DefaultText")
+
+            # do not process default text that contains mixed text node and sub elems
+            # only process text OR single InsertVariable sub elem
+            # we do not process ConditionalPhrase due to the same mixed text node and InsertVariable issue
+            sub_elem_count = len(list(default_text))
+            if default_text.text is not None and sub_elem_count == 0:
+                default_text_data = default_text.text
+            elif default_text.text is None and sub_elem_count > 0:
+                if(default_text.find("ConditionalPhrase")) is not None:
+                    default_text_data = "Unsupported default text sub element"
+                else:
+                    default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
+            else:
+                pass
+            
+            variables[variable_type][query_id] = {}
+            variables[variable_type][query_id].update({
+                "Name":query_name,
+                "DataType":query_type,
+                "Layout":layout,
+                "Priority":priority,
+                "Topic":topic,
+                "Question":question,
+                "Rows":rows,
+                "Columns":columns,
+                "ExampleText":example_text,
+                "DefaultText":default_text_data})
 
     elif variable_type == "Calculation":
         pass_repeat_index = data.get("PassRepeatIndex")
@@ -63,7 +93,12 @@ for child in logic_variables:
         explanatory_blurb = data.find("ExplanatoryBlurb") or ""
         parameters = data.find("Parameters")
         variables[variable_type][query_id] = {}
-        variables[variable_type][query_id].update({"Name":query_name, "DataType":query_type, "PassRepeatIndex":pass_repeat_index,"script":script, "ExplanatoryBlurb":explanatory_blurb})
+        variables[variable_type][query_id].update({
+            "Name":query_name,
+            "DataType":query_type,
+            "PassRepeatIndex":pass_repeat_index,
+            "script":script,
+            "ExplanatoryBlurb":explanatory_blurb})
         variables[variable_type][query_id]["Parameters"] = {}
 
         for parameter in parameters:
