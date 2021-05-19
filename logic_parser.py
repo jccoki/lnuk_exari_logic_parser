@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 import json
 
-tree = ET.parse('NewWAM.lgc')
+tree = ET.parse('Confidentiality_agreement.lgc')
 
 root = tree.getroot()
 
@@ -10,18 +10,22 @@ variables["MultipleChoiceQuestion"] = {}
 variables["UserTextQuestion"] = {}
 variables["Calculation"] = {}
 variables["DynamicMultipleChoiceQuestion"] = {}
+variables["Condition"] = {}
 
 # fetch all logic variable elems
 logic_variables = root.findall("./LogicSetup/Variables/")
 for logic_variable in logic_variables:
+    #child.attrib
+    query_id = logic_variable.get('query')
+    query_name = logic_variable.get('name')
+    query_details = root.find("./LogicSetup/Queries/Query[@name='" + query_id + "']")
+
     # fetch non boolean variables
     if logic_variable.tag == "Variable":
-        #child.attrib  
-        query_id = logic_variable.get('query')
-        query_name = logic_variable.get('name')
+        # Condition elems are automatically boolean so we only get this
+        # property on variables
         query_type = logic_variable.get('type')
-        query_details = root.find("./LogicSetup/Queries/Query[@name='" + query_id + "']")
-        
+
         # if variable has repeater, repeater elem becomes the second child elem
         # else the second child element determines the variable type
         if query_details[1].tag == "Repeater":
@@ -40,7 +44,13 @@ for logic_variable in logic_variables:
             question = data.find("Question").text
 
             variables[variable_type][query_id] = {}
-            variables[variable_type][query_id].update({"Name":query_name, "DataType":query_type, "Layout":layout, "Priority":priority, "Topic":topic, "Question":question})
+            variables[variable_type][query_id].update({
+                "Name":query_name,
+                "DataType":query_type,
+                "Layout":layout,
+                "Priority":priority,
+                "Topic":topic,
+                "Question":question})
             variables[variable_type][query_id]["Responses"] = {}
 
             responses = data.find("Responses")        
@@ -83,7 +93,7 @@ for logic_variable in logic_variables:
                     else:
                         default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
                 else:
-                    pass
+                    print("Unsupported default text structure at " + query_id)
 
                 variables[variable_type][query_id] = {}
                 variables[variable_type][query_id].update({
@@ -99,7 +109,9 @@ for logic_variable in logic_variables:
                     "DefaultText":default_text_data})
 
         elif variable_type == "Calculation":
-            pass_repeat_index = data.get("PassRepeatIndex")
+            pass_repeat_index = data.get("PassRepeatIndex") or ""
+
+            #@todo strip whitespaces
             script = data.find("script").text or ""
             explanatory_blurb = data.find("ExplanatoryBlurb") or ""
             parameters = data.find("Parameters")
@@ -116,11 +128,9 @@ for logic_variable in logic_variables:
                 parameter_name = parameter.get("name") or ""
                 parameter_ref = parameter.get("ref") or ""
 
-                # items to be added should be key:val pair else only the last in the list will be added
+                # items to be added should be key:val pair else only the last
+                # in the list will be added
                 variables[variable_type][query_id]["Parameters"].update({parameter_name:parameter_ref})
-
-            #@todo process calculation as condition/boolean logic variables
-            # calculation as condition is declared as Condition elem
         elif variable_type == "DynamicMultipleChoiceQuestion":
             # DMCQ derives source mostly from CALC
             layout = data.get("Layout") or ""
@@ -143,10 +153,82 @@ for logic_variable in logic_variables:
                 "MultipleSelectToggle":multiple_select_toggle,
                 "ResponseSource":response_source})
         else:
-            pass
+            print("Unsupported variable at " + query_id)
     elif logic_variable.tag == "Condition":
-        pass
+        data = query_details[1]
+        variable_type = data.tag
+
+        if variable_type == "Calculation":
+            pass_repeat_index = data.get("PassRepeatIndex") or ""
+
+            #@todo strip whitespaces
+            script = data.find("script").text or ""
+            parameters = data.find("Parameters")
+            variables["Condition"][query_id] = {}
+            variables["Condition"][query_id].update({
+                "Name":query_name,
+                "PassRepeatIndex":pass_repeat_index,
+                "script":script})
+            variables["Condition"][query_id]["Parameters"] = {}
+
+            for parameter in parameters:
+                parameter_name = parameter.get("name") or ""
+                parameter_ref = parameter.get("ref") or ""
+
+                # items to be added should be key:val pair else only the last
+                # in the list will be added
+                variables["Condition"][query_id]["Parameters"].update({parameter_name:parameter_ref})
+        elif variable_type == "ConditionExpression":
+            # deal with multiple conditions, negation condition, or simple variable value test
+            stack1 = []
+            stack2 = []
+
+            for sub_elem in data.iter():
+                if sub_elem.tag == "ConditionExpression":
+                    # do not add the root elem
+                    pass
+                elif sub_elem.tag == "Test":
+                    # add extra mark to distinguish between variable
+                    # value test vs condition test
+                    elem_attrib = sub_elem.attrib.update({"Tag":sub_elem.tag})
+                    stack1.append(sub_elem.attrib)
+                elif sub_elem.tag == "UseCondition":
+                    elem_attrib = sub_elem.attrib.update({"Tag":sub_elem.tag})
+                    stack1.append(sub_elem.attrib)
+                else:
+                    # add condition operators using postfix notation
+                    stack1.append(sub_elem.tag)
+
+            # create infix notation using postfix stack structure
+            condition_expr = ""
+            while len(stack1) > 0:
+                operator = stack1.pop()
+                if isinstance(operator, dict):
+                    if operator["Tag"] == "UseCondition":
+                        stack2.append(operator["IDREF"])
+                    elif operator.get("Tag") == "Test":
+                        if operator.get("Value") is not None:
+                            condition_expr = operator["IDREF"] + " == " + operator["Value"]
+                        else:
+                            condition_expr = operator["IDREF"] + " == ''"
+
+                        stack2.append(condition_expr)
+                    else:
+                        print("Unsupported condition expression structure at " + query_id)
+                else:
+                    if operator == "Not":
+                        # negation operator always uses prefix notation
+                        operand1 = stack2.pop()
+                        condition_expr = "(" + operator + " " + operand1 + ")"
+                        stack2.append(condition_expr)
+                    else:
+                        operand1 = stack2.pop()
+                        operand2 = stack2.pop()
+                        condition_expr = "(" + operand1 + " " + operator + " " + operand2 + ")"
+                        stack2.append(condition_expr)
+
+            variables["Condition"][query_id] = {}
+            variables["Condition"][query_id].update({"Name":query_name,"Condition":stack2.pop()})
 
 with open('data.json', 'w') as f:
     json.dump(variables, f, indent=4)
-
