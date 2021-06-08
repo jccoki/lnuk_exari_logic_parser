@@ -208,6 +208,15 @@ for logic_variable in logic_variables:
                 # items to be added should be key:val pair else only the last
                 # in the list will be added
                 variables[variable_type][query_id]["Parameters"].update({parameter_name:parameter_ref})
+            
+            # create whitespace stripped values from UTQ
+            if query_name.lower().find("trim") != -1:
+                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_computation.set('name', query_name)
+                cmp_computation.set('resultType', 'text')
+                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                cmp_computation_script.text = "TRIM(" + query_name + ")"
+
         elif variable_type == "DynamicMultipleChoiceQuestion":
             # DMCQ derives source mostly from CALC
             layout = data.get("Layout") or ""
@@ -257,6 +266,20 @@ for logic_variable in logic_variables:
                 # in the list will be added
                 variables["Condition"][query_id]["Parameters"].update({parameter_name:parameter_ref})
         elif variable_type == "ConditionExpression":
+
+            # short circuit, just create Hotdocs calculation variable for _Known.Yes condition
+            if query_name.lower().find('known') != -1:
+                if query_name.lower().find('yes') != -1:
+                    # Hotdocs does not allow period on variable names
+                    variable_name = query_name.replace('.', '')
+                    variable_name = variable_name[0:variable_name.lower().find('known') -1 ]
+
+                    cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                    cmp_computation.set('name', variable_name + '_Known_Yes')
+                    cmp_computation.set('resultType', 'trueFalse')
+                    cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                    cmp_computation_script.text = "ANSWERED("+variable_name+") AND TRIM("+variable_name+") != ''"
+
             # deal with multiple conditions, negation condition, or simple variable value test
             stack1 = []
             stack2 = []
@@ -270,6 +293,8 @@ for logic_variable in logic_variables:
                     # value test vs condition test
                     elem_attrib = sub_elem.attrib.update({"Tag":sub_elem.tag})
                     stack1.append(sub_elem.attrib)
+                    #@todo should we pop the second stack for negation condition?
+
                 elif sub_elem.tag == "UseCondition":
                     elem_attrib = sub_elem.attrib.update({"Tag":sub_elem.tag})
                     stack1.append(sub_elem.attrib)
@@ -322,7 +347,8 @@ for logic_variable in logic_variables:
                 final_condition = stack2.pop()
                 variables["Condition"][query_id].update({"Name":query_name,"Condition":final_condition})
             except ValueError:
-                print("Error processing condition " + query_id)           
+                print("Error processing condition " + query_id)
+
     elif logic_variable.tag == "Repeat":
         # repeats in Hotdocs are just bundled variables in a Dialog variable and returns a List Record
         data = query_details[1]
