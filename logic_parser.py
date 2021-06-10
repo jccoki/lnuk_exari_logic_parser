@@ -16,7 +16,7 @@ cmp_root.set('version','12')
 
 cmp_preferences = ET.SubElement(cmp_root, '{'+namespace+'}preferences')
 
-# make this configurable
+#@todo make this configurable in an external file
 prefs = {'MAX_REPEAT_COUNT':'100', 'MAX_STACK_DEPTH':'100'}
 for key in prefs.keys():
     preference = ET.SubElement(cmp_preferences, '{'+namespace+'}preference')
@@ -32,10 +32,9 @@ variables["Condition"] = {}
 
 # fetch all logic variable elems
 cmp_components = ET.SubElement(cmp_root, '{'+namespace+'}components')
-
 logic_variables = lgc_root.findall("./LogicSetup/Variables/")
+
 for logic_variable in logic_variables:
-    #child.attrib
     query_id = logic_variable.get('query')
     query_name = logic_variable.get('name')
     query_details = lgc_root.find("./LogicSetup/Queries/Query[@name='" + query_id + "']")
@@ -265,89 +264,136 @@ for logic_variable in logic_variables:
                 # items to be added should be key:val pair else only the last
                 # in the list will be added
                 variables["Condition"][query_id]["Parameters"].update({parameter_name:parameter_ref})
-        elif variable_type == "ConditionExpression":
+        elif variable_type == "ConditionExpression":                
+            #print("Processing condition " + query_id)
 
-            # short circuit, just create Hotdocs calculation variable for _Known.Yes condition
-            if query_name.lower().find('known') != -1:
-                if query_name.lower().find('yes') != -1:
-                    # Hotdocs does not allow period on variable names
-                    variable_name = query_name.replace('.', '')
-                    variable_name = variable_name[0:variable_name.lower().find('known') -1 ]
+            # we do not need to process _Known.No structure since we can achieved the same structure using
+            # # if/else structure on HotDocs Author
+            if (query_name.lower().find('known') > 0) and (query_name.lower().find('no') > 0):
+                print("Ignoring condition at " + query_id)
+            else:
+                # deal with multiple conditions, negation condition, or simple variable value test
+                stack1 = []
+                stack2 = []
 
-                    cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-                    cmp_computation.set('name', variable_name + '_Known_Yes')
-                    cmp_computation.set('resultType', 'trueFalse')
-                    cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
-                    cmp_computation_script.text = "ANSWERED("+variable_name+") AND TRIM("+variable_name+") != ''"
+                # depth first elem parsing
+                # and using postfix notation
+                for sub_elem in data.iter():
+                    if sub_elem.tag == "ConditionExpression":
+                        # do not add the root elem
+                        pass
+                    elif (sub_elem.tag == "Test") or (sub_elem.tag == "UseCondition"):
+                        stack1.append(sub_elem)
+                    else:
+                        # track condition operators on different stack
+                        stack1.append(sub_elem.tag)
+                    print(stack1)
 
-            # deal with multiple conditions, negation condition, or simple variable value test
-            stack1 = []
-            stack2 = []
+                print("Start processing")
+                # create infix notation using postfix stack structure
+                condition_expr = ""
+                
+                # stack 1 contains simple condition ie. generated from MCQ
+                if len(stack1) == 1:
+                    operator = stack1.pop()
+                    if isinstance(operator, ET.Element):
+                        # for Test elems, strip periods on variable name
+                        variable_name = operator.get('IDREF')
+                        variable_name = variable_name.replace('.', '')
+                        variable_value = operator.get('Value')
 
-            for sub_elem in data.iter():
-                if sub_elem.tag == "ConditionExpression":
-                    # do not add the root elem
-                    pass
-                elif sub_elem.tag == "Test":
-                    # add extra mark to distinguish between variable
-                    # value test vs condition test
-                    elem_attrib = sub_elem.attrib.update({"Tag":sub_elem.tag})
-                    stack1.append(sub_elem.attrib)
-                    #@todo should we pop the second stack for negation condition?
-
-                elif sub_elem.tag == "UseCondition":
-                    elem_attrib = sub_elem.attrib.update({"Tag":sub_elem.tag})
-                    stack1.append(sub_elem.attrib)
-                else:
-                    # add condition operators using postfix notation
-                    stack1.append(sub_elem.tag)
-
-            # create infix notation using postfix stack structure
-            condition_expr = ""
-            while len(stack1) > 0:
-                operator = stack1.pop()
-                if isinstance(operator, dict):
-                    if operator["Tag"] == "UseCondition":
-                        stack2.append(operator["IDREF"])
-                    elif operator.get("Tag") == "Test":
-                        if operator.get("Value") is not None:
-                            condition_expr = operator["IDREF"] + " == " + operator["Value"]
+                        if operator.get('Value') is not None:
+                            condition_expr = "("+ variable_name +" == '"+ variable_value +"')"
                         else:
-                            condition_expr = operator["IDREF"] + " == ''"
+                            print("Value required at condition " + query_id)
 
                         stack2.append(condition_expr)
-                    else:
-                        print("Unsupported condition expression structure at " + query_id)
                 else:
-                    if operator == "Not":
-                        # negation operator always uses prefix notation
-                        try:
-                            operand1 = stack2.pop()
-                        except ValueError:
-                            print("Error processing condition " + query_id)
-                        
-                        condition_expr = "(" + operator + " " + operand1 + ")"
-                        stack2.append(condition_expr)
-                    else:
-                        try:
-                            operand1 = stack2.pop()
-                        except ValueError:
-                            print("Error processing condition " + query_id)
+                    while len(stack1) > 0:
+                        # stack 1 contains compound condition
+                        operator = stack1.pop()
+                        print(operator)
+                        print(stack2)
+                        if isinstance(operator, ET.Element):
+                            # put Test and UseCondition elems on the temp stack
+                            stack2.append(operator)
+                        else:
+                            # we are handling negation operation
+                            if operator == "Not":
+                                if len(stack2) > 0:
+                                    operand1 = stack2.pop()
+                                    # we are guaranteed that stack 2 contains elems as operands
+                                    if operand1.tag == "UseCondition":
+                                        condition_expr = operand1.get('IDREF')
+                                        condition_expr = condition_expr.replace('.', '_')
+                                    elif operand1.tag == "Test":
+                                        # for Test elems, strip periods on variable name
+                                        variable_name = operand1.get('IDREF')
+                                        variable_name = variable_name.replace('.', '')
+                                        variable_value = operand1.get('Value')
 
-                        try:
-                            operand2 = stack2.pop()
-                        except ValueError:
-                            print("Error processing condition " + query_id)
+                                        if variable_value is not None:
+                                            condition_expr = "("+variable_name+" == '"+variable_value+"'"+")"
+                                        else:
+                                            condition_expr = "("+variable_name+" == ''"+")"
 
-                        condition_expr = "(" + operand1 + " " + operator + " " + operand2 + ")"
-                        stack2.append(condition_expr)
+                                    condition_expr = "(NOT " + condition_expr + ")"
+                                    stack2.append(condition_expr)
+                                else:
+                                    print("Missing operand for NOT condition on " + query_id)
+                            else:
+                                # we are now handling compound conditions
+                                # only UseCondition elems should only be processed here
+                                if len(stack2) > 1:
+                                    operand1 = stack2.pop()
+                                    operand2 = stack2.pop()
+
+                                    # simple conditions generated from MCQ needs to be renamed
+                                    if isinstance(operand1, ET.Element):
+                                        if operand1.tag == "UseCondition":
+                                            operand1 = operand1.get('IDREF')
+                                            operand1 = operand1.replace('.', '_')
+                                        elif operand1.tag == "Test":
+                                            # for Test elems, strip periods on variable name
+                                            variable_name = operand1.get('IDREF').replace('.', '')
+                                            variable_value = operand1.get('Value')
+                                            if variable_value is not None:
+                                                operand1 = "("+variable_name+" == '"+variable_value+"')"
+                                            else:
+                                                print("Value required at condition " + query_id)
+
+                                    if isinstance(operand2, ET.Element):
+                                        if operand2.tag == "UseCondition":
+                                            operand2 = operand2.get('IDREF')
+                                            operand2 = operand2.replace('.', '_')
+                                        elif operand2.tag == "Test":
+                                            # for Test elems, strip periods on variable name
+                                            variable_name = operand2.get('IDREF').replace('.', '')
+                                            variable_value = operand2.get('Value')
+                                            if variable_value is not None:
+                                                operand2 = "("+variable_name+" == '"+variable_value+"')"
+                                            else:
+                                                print("Value required at condition " + query_id)
+
+                                    condition_expr = "(" + operand1 + " " + operator.upper() + " " + operand2 + ")"
+                                    stack2.append(condition_expr)
+                                else:
+                                    print("Incomplete operands for " + operator +" on " + query_id)
+                
+                print("remaining values:")
+                print(stack1)
+                print(stack2)
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+                final_condition = stack2.pop()
+                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_computation.set('name', variable_name)
+                cmp_computation.set('resultType', 'trueFalse')
+                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                cmp_computation_script.text = final_condition
+                print("final condition: " + final_condition)
 
             variables["Condition"][query_id] = {}
-            try:
-                final_condition = stack2.pop()
-                variables["Condition"][query_id].update({"Name":query_name,"Condition":final_condition})
-            except ValueError:
-                print("Error processing condition " + query_id)
 
     elif logic_variable.tag == "Repeat":
         # repeats in Hotdocs are just bundled variables in a Dialog variable and returns a List Record
