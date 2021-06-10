@@ -8,6 +8,7 @@ cmp_filename = Path(logic_file).stem + '.cmp'
 tree = ET.parse(logic_file)
 lgc_root = tree.getroot()
 
+#@todo make this configurable in an external file
 namespace = 'http://www.hotdocs.com/schemas/component_library/2009'
 ET.register_namespace('hd', namespace)
 
@@ -38,25 +39,21 @@ for logic_variable in logic_variables:
     query_id = logic_variable.get('query')
     query_name = logic_variable.get('name')
     query_details = lgc_root.find("./LogicSetup/Queries/Query[@name='" + query_id + "']")
-
-    # calculation repeats requires dataytype
     query_type = logic_variable.get('type')
 
     # fetch non boolean variables
     if logic_variable.tag == "Variable":
         # if variable has repeater, repeater elem becomes the second child elem
         # else the second child element determines the variable type
-        # @note repeater is used differently in HotDocs
+        # @note in HotDocs, repeater can only be used in a Dialog and can be used as basis for grouping
         if query_details[1].tag == "Repeater":
             data = query_details[2]
         else:
             data = query_details[1]
 
         variable_type = data.tag
-
         #@todo extract and parse guidance notes
         if variable_type == "MultipleChoiceQuestion":
-            layout = data.get("Layout") or ""
             priority = data.get("Priority") or ""
             topic = data.find("Topic").text
             question = data.find("Question").text
@@ -74,20 +71,20 @@ for logic_variable in logic_variables:
             mcq_option_prompt = ET.SubElement(mcq_option, '{'+namespace+'}prompt')
             mcq_option_prompt.text = 'Value_DisplayColumn'
 
-            # mcq elem is always followed by options table elem
+            # mcq elem is always followed by its options table elem
             cmp_mcq_option_table = ET.SubElement(cmp_components, '{'+namespace+'}computation')
             cmp_mcq_option_table.set('name', query_name + '.BUILTIN_OptionTable')
             
             cmp_mcq_option_table_script = ET.SubElement(cmp_mcq_option_table, '{'+namespace+'}script')
             cmp_mcq_option_table_fields = {}
-            cmp_mcq_option_table_fields['Fields'] = [{"IsKey":True,"Name":"Key","Type":1}, {"Name":"Value","Type":1}]
+            cmp_mcq_option_table_fields['Fields'] = [{"IsKey":True,"Name":"Value","Type":1}, {"Name":"Prompt","Type":1}]
 
             # designate mcq option table as key/val pairs
             cmp_mcq_option_table_fields['Rows'] = []
 
             responses = data.find("Responses")
             for response in responses:
-                # prompts in some variables in NewWAM were wrapped with <p>
+                # prompts in some variables in WAM were wrapped with <p>
                 if response.find("Prompt/p") is not None:
                     prompt = response.find("Prompt/p").text
                 else:
@@ -100,49 +97,93 @@ for logic_variable in logic_variables:
             cmp_mcq_option_table_script.text = 'QUIT\n'+ json.dumps(cmp_mcq_option_table_fields)
 
         elif variable_type == "UserTextQuestion":
-            layout = data.get("Layout") or ""
             priority = data.get("Priority") or ""
-            rows = data.get("Rows") or ""
-            columns = data.get("Columns") or ""
+            rows = data.get("Rows") or 1
+            columns = data.get("Columns") or 20
             topic = data.find("Topic").text
             question = data.find("Question").text
 
-            cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
-            cmp_utq.set('name', query_name)
-            cmp_utq_title = ET.SubElement(cmp_utq, '{'+namespace+'}title')
-            cmp_utq_title.text = topic
-            
-            # HotDocs does not have equivalent example text structure
-            example_text = ""
-            if data.find("ExampleText") is not None:
-                example_text = data.find("ExampleText").text
+            # all UTQ specific variables should not have periods on variables names
+            # periods will be replaced with underscore and should be specific to conditions as much as possible
+            query_name = query_name.replace('.', '')
 
-            default_text_data = ""
-            if data.find("DefaultText") is not None:
-                cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
+            if (query_type == "Date-DDMonthYYYY-AllowBlank") or (query_type == "Date-DDMMYYYY-AllowBlank"):
+                # date datatypes
+                cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}date')
+                cmp_utq.set('name', query_name)
+                
+                if(query_type.find('AllowBlank') != -1):
+                    cmp_utq.set('warnIfUnanswered', False)
+                
+                cmp_utq_title = ET.SubElement(cmp_utq, '{'+namespace+'}title')
+                cmp_utq_title.text = topic
+                cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
+                cmp_utq_format.text = "d Mmmm yyyy"
+                cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
+                cmp_utq_prompt.text = question
+                cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                cmp_utq_field_width.set('widthType', 'exact')
+                cmp_utq_field_width.set('exactWidth', columns)
 
-                default_text = data.find("DefaultText")
-                # parsing of XML nodes is unpredictable so do not process default text that contains mixed text node and sub elems
-                # only process text OR single InsertVariable sub elem
-                # we do not process ConditionalPhrase due to the same mixed text node and InsertVariable issue
-                # report those UserTextQuestion that contains ConditionalPhrase or multiple sub elems
-                sub_elem_count = len(list(default_text))
-                if default_text.text is not None and sub_elem_count == 0:
-                    default_text_data = default_text.text
-                    cmp_utq_defMergeProps.set('unansweredText', default_text_data)
-                elif default_text.text is None and sub_elem_count > 0:
-                    if(default_text.find("ConditionalPhrase")) is not None:
-                        print("Unsupported default text sub element")
-                    else:
-                        default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
+            elif (query_type == "integer") or (query_type == "positiveInteger") or (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank"):
+                # integer data types
+                cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}number')
+                cmp_utq.set('name', query_name)
+
+                if query_type == "Number-3d-3d-3d.00-AllowBlank":
+                    cmp_utq.set('warnIfUnanswered', False)
+                    cmp_utq.set('decimalPlaces', 2)
+
+                cmp_utq_title = ET.SubElement(cmp_utq, '{'+namespace+'}title')
+                cmp_utq_title.text = topic
+                cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
+                cmp_utq_format.text = "9,999.00"
+                cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
+                cmp_utq_prompt.text = question
+                cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                cmp_utq_field_width.set('widthType', 'exact')
+                cmp_utq_field_width.set('exactWidth', columns)
+
+            elif (query_type == "string") or (query_type == "NonEmptyString"):
+                # string datatypes
+                cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
+                cmp_utq.set('name', query_name)
+                cmp_utq_title = ET.SubElement(cmp_utq, '{'+namespace+'}title')
+                cmp_utq_title.text = topic
+                
+                # HotDocs does not have equivalent example text structure
+                example_text = ""
+                if data.find("ExampleText") is not None:
+                    example_text = data.find("ExampleText").text
+
+                default_text_data = ""
+                if data.find("DefaultText") is not None:
+                    cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
+
+                    default_text = data.find("DefaultText")
+                    # parsing of XML nodes is unpredictable so do not process default text that contains mixed text node and sub elems
+                    # only process text OR single InsertVariable sub elem
+                    # we do not process ConditionalPhrase due to the same mixed text node and InsertVariable issue
+                    # report those UserTextQuestion that contains ConditionalPhrase or multiple sub elems
+                    sub_elem_count = len(list(default_text))
+                    if default_text.text is not None and sub_elem_count == 0:
+                        default_text_data = default_text.text
                         cmp_utq_defMergeProps.set('unansweredText', default_text_data)
-                else:
-                    print("Unsupported default text structure at " + query_id)
+                    elif default_text.text is None and sub_elem_count > 0:
+                        if(default_text.find("ConditionalPhrase")) is not None:
+                            print("Unsupported default text sub element")
+                        else:
+                            default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
+                            cmp_utq_defMergeProps.set('unansweredText', default_text_data)
+                    else:
+                        print("Unsupported default text structure at " + query_id)
 
-            cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
-            cmp_utq_prompt.text = question
-            cmp_utq_fieldWidth = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
-            cmp_utq_fieldWidth.set('widthType', 'calculated')
+                cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
+                cmp_utq_prompt.text = question
+                cmp_utq_fieldWidth = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                cmp_utq_fieldWidth.set('widthType', 'calculated')
+            else:
+                print("Unsupported UserTextQuestion datatype at " + query_id)
         
         elif variable_type == "SmartPhrase":
             cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
