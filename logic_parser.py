@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 import json
 from pathlib import Path
 
-logic_file = "Confidentiality_agreement.lgc"
+logic_file = "NewWAM.lgc"
 cmp_filename = Path(logic_file).stem + '.cmp'
 
 tree = ET.parse(logic_file)
@@ -109,8 +109,8 @@ for logic_variable in logic_variables:
 
         elif variable_type == "UserTextQuestion":
             priority = data.get("Priority") or ""
-            rows = data.get("Rows") or 1
-            columns = data.get("Columns") or 20
+            rows = data.get("Rows") or "1"
+            columns = data.get("Columns") or "20"
             topic = data.find("Topic").text
             question = data.find("Question").text
 
@@ -191,8 +191,13 @@ for logic_variable in logic_variables:
 
                 cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
                 cmp_utq_prompt.text = question
-                cmp_utq_fieldWidth = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
-                cmp_utq_fieldWidth.set('widthType', 'calculated')
+                cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                cmp_utq_field_width.set('widthType', 'exact')
+                cmp_utq_field_width.set('exactWidth', columns)
+
+                if int(rows) > 1:
+                    cmp_utq_multi_line = ET.SubElement(cmp_utq, '{'+namespace+'}multiLine')
+                    cmp_utq_multi_line.set('height', rows)
             else:
                 print("Unsupported UserTextQuestion datatype at " + query_id)
         
@@ -236,8 +241,9 @@ for logic_variable in logic_variables:
             cmp_sp_script.text = script_string
 
         elif variable_type == "Calculation":
-            # calculation in HotDocs does not use JS and uses a different paradigm
-            pass_repeat_index = data.get("PassRepeatIndex") or ""
+            # @note calculation in HotDocs does not use JS
+            # @note there is no repeatIndex concept in HotDocs and repeatition is done
+            # using Dialog variables
 
             #@todo strip whitespaces
             script = data.find("script").text or ""
@@ -247,7 +253,6 @@ for logic_variable in logic_variables:
             variables[variable_type][query_id].update({
                 "Name":query_name,
                 "DataType":query_type,
-                "PassRepeatIndex":pass_repeat_index,
                 "script":script,
                 "ExplanatoryBlurb":explanatory_blurb})
             variables[variable_type][query_id]["Parameters"] = {}
@@ -260,13 +265,32 @@ for logic_variable in logic_variables:
                 # in the list will be added
                 variables[variable_type][query_id]["Parameters"].update({parameter_name:parameter_ref})
             
-            # create whitespace stripped values from UTQ
-            if query_name.lower().find("trim") != -1:
+            query_name = query_name.replace('.', '')
+            if query_type == 'integer':
+                print('Unsupported Calculation with return type integer at ' + query_id)
+            elif query_type == 'string':
+
+
                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                 cmp_computation.set('name', query_name)
                 cmp_computation.set('resultType', 'text')
                 cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
-                cmp_computation_script.text = "TRIM(" + query_name + ")"
+
+                # strip newline chars
+                if query_name.lower().find("removeblanks") != -1:
+                    # we expect only 1 parameter is declared
+                    parameter = data.find("Parameters/Parameter").get('ref')
+                    cmp_computation_script.text = "REPLACE(" + parameter + ", '\p', ', ')"
+                else:
+                    # add support to TRIM calculations on UTQ variables
+                    if query_name.lower().find("trim") != -1:
+                        # we expect only 1 parameter is declared
+                        parameter = data.find("Parameters/Parameter").get('ref')
+                        cmp_computation_script.text = "TRIM(" + parameter + ")"
+                    else:
+                        print('Unsupported Calculation string manipulation at ' + query_id)
+            else:
+                print('Unsupported Calculation return type at ' + query_id)
 
         elif variable_type == "DynamicMultipleChoiceQuestion":
             # DMCQ derives source mostly from CALC
@@ -297,9 +321,8 @@ for logic_variable in logic_variables:
         variable_type = data.tag
 
         if variable_type == "Calculation":
+            # @todo observe the output list and determine next action plan
             pass_repeat_index = data.get("PassRepeatIndex") or ""
-
-            #@todo strip whitespaces
             script = data.find("script").text or ""
             parameters = data.find("Parameters")
             variables["Condition"][query_id] = {}
@@ -317,10 +340,8 @@ for logic_variable in logic_variables:
                 # in the list will be added
                 variables["Condition"][query_id]["Parameters"].update({parameter_name:parameter_ref})
         elif variable_type == "ConditionExpression":                
-            #print("Processing condition " + query_id)
-
             # we do not need to process _Known.No structure since we can achieved the same structure using
-            # # if/else structure on HotDocs Author
+            # if/else structure on HotDocs Author
             if (query_name.lower().find('known') > 0) and (query_name.lower().find('no') > 0):
                 print("Ignoring condition at " + query_id)
             else:
@@ -329,7 +350,6 @@ for logic_variable in logic_variables:
                 stack2 = []
 
                 # depth first elem parsing
-                # and using postfix notation
                 for sub_elem in data.iter():
                     if sub_elem.tag == "ConditionExpression":
                         # do not add the root elem
@@ -339,14 +359,11 @@ for logic_variable in logic_variables:
                     else:
                         # track condition operators on different stack
                         stack1.append(sub_elem.tag)
-                    print(stack1)
 
-                print("Start processing")
                 # create infix notation using postfix stack structure
-                condition_expr = ""
-                
-                # stack 1 contains simple condition ie. generated from MCQ
+                condition_expr = ""                
                 if len(stack1) == 1:
+                    # stack 1 contains simple condition ie. generated from MCQ
                     operator = stack1.pop()
                     if isinstance(operator, ET.Element):
                         # for Test elems, strip periods on variable name
@@ -355,7 +372,7 @@ for logic_variable in logic_variables:
                         variable_value = operator.get('Value')
 
                         if operator.get('Value') is not None:
-                            condition_expr = "("+ variable_name +" == '"+ variable_value +"')"
+                            condition_expr = variable_name +" == '"+ variable_value+"'"
                         else:
                             print("Value required at condition " + query_id)
 
@@ -364,19 +381,19 @@ for logic_variable in logic_variables:
                     while len(stack1) > 0:
                         # stack 1 contains compound condition
                         operator = stack1.pop()
-                        print(operator)
-                        print(stack2)
                         if isinstance(operator, ET.Element):
                             # put Test and UseCondition elems on the temp stack
                             stack2.append(operator)
                         else:
-                            # we are handling negation operation
                             if operator == "Not":
+                                # handling negation operation
                                 if len(stack2) > 0:
                                     operand1 = stack2.pop()
                                     # we are guaranteed that stack 2 contains elems as operands
                                     if operand1.tag == "UseCondition":
                                         condition_expr = operand1.get('IDREF')
+                                        # period in condition expression variable name may come from
+                                        # autogenerated MCQ options or user provided variable names
                                         condition_expr = condition_expr.replace('.', '_')
                                     elif operand1.tag == "Test":
                                         # for Test elems, strip periods on variable name
@@ -385,9 +402,9 @@ for logic_variable in logic_variables:
                                         variable_value = operand1.get('Value')
 
                                         if variable_value is not None:
-                                            condition_expr = "("+variable_name+" == '"+variable_value+"'"+")"
+                                            condition_expr = "("+variable_name+" == '"+variable_value+"')"
                                         else:
-                                            condition_expr = "("+variable_name+" == ''"+")"
+                                            condition_expr = "("+variable_name+" == '')"
 
                                     condition_expr = "(NOT " + condition_expr + ")"
                                     stack2.append(condition_expr)
@@ -400,7 +417,7 @@ for logic_variable in logic_variables:
                                     operand1 = stack2.pop()
                                     operand2 = stack2.pop()
 
-                                    # simple conditions generated from MCQ needs to be renamed
+                                    # conditions expressions generated from MCQ needs to be renamed
                                     if isinstance(operand1, ET.Element):
                                         if operand1.tag == "UseCondition":
                                             operand1 = operand1.get('IDREF')
@@ -432,18 +449,15 @@ for logic_variable in logic_variables:
                                 else:
                                     print("Incomplete operands for " + operator +" on " + query_id)
                 
-                print("remaining values:")
-                print(stack1)
-                print(stack2)
-                variable_name = query_name
-                variable_name = variable_name.replace('.', '_')
-                final_condition = stack2.pop()
+                variable_name = query_name.replace('.', '_')
                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                 cmp_computation.set('name', variable_name)
                 cmp_computation.set('resultType', 'trueFalse')
                 cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
-                cmp_computation_script.text = final_condition
-                print("final condition: " + final_condition)
+
+                # temp stack should contain the final condition
+                condition_expr = stack2.pop()
+                cmp_computation_script.text = condition_expr
 
             variables["Condition"][query_id] = {}
 
