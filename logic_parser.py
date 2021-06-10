@@ -52,24 +52,35 @@ for logic_variable in logic_variables:
             data = query_details[1]
 
         variable_type = data.tag
-        #@todo extract and parse guidance notes
+        #@note there is no such thing as questionnaire specific guidance notes in HotDocs
         if variable_type == "MultipleChoiceQuestion":
             priority = data.get("Priority") or ""
             topic = data.find("Topic").text
             question = data.find("Question").text
+            cardinality = data.get("Cardinality") or "Single"
 
-            #@todo differentiate multi select vs single select
             cmp_mcq = ET.SubElement(cmp_components, '{'+namespace+'}multipleChoice')
             cmp_mcq.set('name', query_name + '_SelectionVariable')
-            mcq_title = ET.SubElement(cmp_mcq, '{'+namespace+'}title')
-            mcq_title.text = topic
-            mcq_prompt = ET.SubElement(cmp_mcq, '{'+namespace+'}prompt')
-            mcq_prompt.text = question
-            mcq_options = ET.SubElement(cmp_mcq, '{'+namespace+'}options')
-            mcq_option = ET.SubElement(mcq_options, '{'+namespace+'}option')
-            mcq_option.set('name', 'BUILTIN_AnswerSource')
-            mcq_option_prompt = ET.SubElement(mcq_option, '{'+namespace+'}prompt')
-            mcq_option_prompt.text = 'Value_DisplayColumn'
+
+            #@note HotDocs single select variable also may not require answer but there is no
+            # info in Exari logic determine this
+            if (cardinality == 'MultipleOrNone'):
+                cmp_mcq.set('warnIfUnanswered', False)
+
+            cmp_mcq_title = ET.SubElement(cmp_mcq, '{'+namespace+'}title')
+            cmp_mcq_title.text = topic
+
+            cmp_mcq_prompt = ET.SubElement(cmp_mcq, '{'+namespace+'}prompt')
+            cmp_mcq_prompt.text = question
+
+            cmp_mcq_options = ET.SubElement(cmp_mcq, '{'+namespace+'}options')
+            cmp_mcq_option = ET.SubElement(cmp_mcq_options, '{'+namespace+'}option')
+            cmp_mcq_option.set('name', 'BUILTIN_AnswerSource')
+            cmp_mcq_option_prompt = ET.SubElement(cmp_mcq_option, '{'+namespace+'}prompt')
+            cmp_mcq_option_prompt.text = 'Prompt_DisplayColumn'
+
+            if (cardinality == 'MultipleOrNone') or (cardinality == 'Multiple'):
+                cmp_mcq_multiple_selection = ET.SubElement(cmp_mcq, '{'+namespace+'}multipleSelection')
 
             # mcq elem is always followed by its options table elem
             cmp_mcq_option_table = ET.SubElement(cmp_components, '{'+namespace+'}computation')
