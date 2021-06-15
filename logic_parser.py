@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 logic_file = "NewWAM.lgc"
+#Confidentiality_agreement
 cmp_filename = Path(logic_file).stem + '.cmp'
 
 tree = ET.parse(logic_file)
@@ -25,11 +26,15 @@ for key in prefs.keys():
     preference.text = prefs[key]
 
 variables = {}
-variables["MultipleChoiceQuestion"] = {}
-variables["UserTextQuestion"] = {}
-variables["Calculation"] = {}
-variables["DynamicMultipleChoiceQuestion"] = {}
-variables["Condition"] = {}
+variables["Stats"] = {"total": 0, "ignored": 0, "error": 0, "unknown": 0}
+variables["MultipleChoiceQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+variables["UserTextQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+variables["Calculation"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
+variables["DynamicMultipleChoiceQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
+variables["ConditionExpression"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
+variables["SmartPhrase"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
+
+variables["Data"] = {}
 
 # fetch all logic variable elems
 cmp_components = ET.SubElement(cmp_root, '{'+namespace+'}components')
@@ -40,6 +45,8 @@ for logic_variable in logic_variables:
     query_name = logic_variable.get('name')
     query_details = lgc_root.find("./LogicSetup/Queries/Query[@name='" + query_id + "']")
     query_type = logic_variable.get('type')
+
+    variables["Stats"]["total"] = variables["Stats"]["total"] + 1
 
     # fetch non boolean variables
     if logic_variable.tag == "Variable":
@@ -52,17 +59,23 @@ for logic_variable in logic_variables:
             data = query_details[1]
 
         variable_type = data.tag
-        #@note there is no such thing as questionnaire specific guidance notes in HotDocs
-        if variable_type == "MultipleChoiceQuestion":
-            priority = data.get("Priority") or ""
+
+        if data.find("Topic") is not None:
             topic = data.find("Topic").text
+            if not (topic in variables["Data"]):
+                variables["Data"][topic] = {}
+
+        # @note there is no such thing as questionnaire specific guidance notes in HotDocs
+        if variable_type == "MultipleChoiceQuestion":
+            #priority = data.get("Priority") or ""
+            #topic = data.find("Topic").text
             question = data.find("Question").text
             cardinality = data.get("Cardinality") or "Single"
 
             cmp_mcq = ET.SubElement(cmp_components, '{'+namespace+'}multipleChoice')
             cmp_mcq.set('name', query_name + '_SelectionVariable')
 
-            #@note HotDocs single select variable also may not require answer but there is no
+            # @note HotDocs single select variable also may not require answer but there is no
             # info in Exari logic determine this
             if (cardinality == 'MultipleOrNone'):
                 cmp_mcq.set('warnIfUnanswered', 'False')
@@ -102,16 +115,28 @@ for logic_variable in logic_variables:
                     prompt = response.find("Prompt").text
                 
                 value = response.find("SetValueTo").text
-                cmp_mcq_option_table_fields['Rows'].append([value,prompt])            
+                cmp_mcq_option_table_fields['Rows'].append([value,prompt])
             
             # HotDocs requires a newline char after the QUIT keywork on option table
             cmp_mcq_option_table_script.text = 'QUIT\n'+ json.dumps(cmp_mcq_option_table_fields)
 
+            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+
+            # arrange MCQs based on topic
+            #variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
+            print("processing " + query_id)
+            if (data.get("Priority") is None) or (data.get("Priority") == ""):
+                priority = 0
+            else:
+                priority = float(data.get("Priority"))
+
+            variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+
         elif variable_type == "UserTextQuestion":
-            priority = data.get("Priority") or ""
+            #priority = data.get("Priority") or ""
             rows = data.get("Rows") or "1"
             columns = data.get("Columns") or "20"
-            topic = data.find("Topic").text
+            #topic = data.find("Topic").text
             question = data.find("Question").text
 
             # all UTQ specific variables should not have periods on variables names
@@ -129,13 +154,13 @@ for logic_variable in logic_variables:
                 cmp_utq_title = ET.SubElement(cmp_utq, '{'+namespace+'}title')
                 cmp_utq_title.text = topic
                 cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
+                # @todo make this configurable
                 cmp_utq_format.text = "d Mmmm yyyy"
                 cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
                 cmp_utq_prompt.text = question
                 cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
                 cmp_utq_field_width.set('widthType', 'exact')
                 cmp_utq_field_width.set('exactWidth', columns)
-
             elif (query_type == "integer") or (query_type == "positiveInteger") or (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank"):
                 # integer data types
                 cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}number')
@@ -148,13 +173,13 @@ for logic_variable in logic_variables:
                 cmp_utq_title = ET.SubElement(cmp_utq, '{'+namespace+'}title')
                 cmp_utq_title.text = topic
                 cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
+                # @todo make this configurable
                 cmp_utq_format.text = "9,999.00"
                 cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
                 cmp_utq_prompt.text = question
                 cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
                 cmp_utq_field_width.set('widthType', 'exact')
                 cmp_utq_field_width.set('exactWidth', columns)
-
             elif (query_type == "string") or (query_type == "NonEmptyString"):
                 # string datatypes
                 cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
@@ -182,11 +207,13 @@ for logic_variable in logic_variables:
                         cmp_utq_defMergeProps.set('unansweredText', default_text_data)
                     elif default_text.text is None and sub_elem_count > 0:
                         if(default_text.find("ConditionalPhrase")) is not None:
+                            variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                             print("Unsupported default text sub element")
                         else:
                             default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
                             cmp_utq_defMergeProps.set('unansweredText', default_text_data)
                     else:
+                        variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                         print("Unsupported default text structure at " + query_id)
 
                 cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
@@ -199,14 +226,20 @@ for logic_variable in logic_variables:
                     cmp_utq_multi_line = ET.SubElement(cmp_utq, '{'+namespace+'}multiLine')
                     cmp_utq_multi_line.set('height', rows)
             else:
+                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
                 print("Unsupported UserTextQuestion datatype at " + query_id)
-        
-        elif variable_type == "SmartPhrase":
-            cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-            cmp_sp.set('name', query_name)
-            cmp_sp.set('resultType', 'text')
-            cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
 
+            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+
+            # arrange UTQs based on topic
+            #variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
+            if (data.get("Priority") is None) or (data.get("Priority") == ""):
+                priority = 0
+            else:
+                priority = float(data.get("Priority"))
+            variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+
+        elif variable_type == "SmartPhrase":
             # can only process well-formed simple smartphrases
             smartphrase_conditions = []
             for sub_elem in data.iter():
@@ -222,55 +255,49 @@ for logic_variable in logic_variables:
                     smartphrase_conditions = []
                     break
 
-            ctr = 1
-            script_string = ""
-            while len(smartphrase_conditions) > 0:
-                smartphrase_condition = smartphrase_conditions.pop()                
-                if isinstance(smartphrase_condition, ET.Element):
-                    # replace period on conditions
-                    variable = smartphrase_condition.get('Condition').replace('.', '_')
-                    if ctr == 1:
-                        script_string = 'IF ' + variable
+            if len(smartphrase_conditions) > 0:
+                ctr = 1
+                script_string = ""
+                while len(smartphrase_conditions) > 0:
+                    smartphrase_condition = smartphrase_conditions.pop()
+                    if isinstance(smartphrase_condition, ET.Element):
+                        # replace period on conditions
+                        variable = smartphrase_condition.get('Condition').replace('.', '_')
+                        if ctr == 1:
+                            script_string = 'IF ' + variable
+                        else:
+                            script_string = script_string + 'ELSE IF ' + variable
+
+                        if smartphrase_condition.text is not None:
+                            script_string = script_string + " RESULT " + "'" + smartphrase_condition.text.strip() + "'\n"
+                        else:
+                            script_string = script_string + "\n"
                     else:
-                        script_string = script_string + 'ELSE IF ' + variable
+                        variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                        print("Unexpected element on SmartPhrase at " + query_id)
 
-                    if smartphrase_condition.text is not None:
-                        script_string = script_string + " RESULT " + "'" + smartphrase_condition.text.strip() + "'\n"
-                    else:
-                        script_string = script_string + "\n"
-                else:
-                    print("Unexpected element on SmartPhrase at " + query_id)
+                    ctr = ctr + 1
 
-                ctr = ctr + 1
+                cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_sp.set('name', query_name)
+                cmp_sp.set('resultType', 'text')
+                cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
 
-            script_string = script_string + 'END IF'
-            cmp_sp_script.text = script_string
+                script_string = script_string + 'END IF'
+                cmp_sp_script.text = script_string
+
+            else:
+                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+
+            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+
         elif variable_type == "Calculation":
             # @note calculation in HotDocs does not use JS
             # @note there is no repeatIndex concept in HotDocs and repeatition is done
             # using Dialog variables
-
-            script = data.find("script").text or ""
-            explanatory_blurb = data.find("ExplanatoryBlurb") or ""
-            parameters = data.find("Parameters")
-            variables[variable_type][query_id] = {}
-            variables[variable_type][query_id].update({
-                "Name":query_name,
-                "DataType":query_type,
-                "script":script,
-                "ExplanatoryBlurb":explanatory_blurb})
-            variables[variable_type][query_id]["Parameters"] = {}
-
-            for parameter in parameters:
-                parameter_name = parameter.get("name") or ""
-                parameter_ref = parameter.get("ref") or ""
-
-                # items to be added should be key:val pair else only the last
-                # in the list will be added
-                variables[variable_type][query_id]["Parameters"].update({parameter_name:parameter_ref})
-            
             query_name = query_name.replace('.', '')
             if query_type == 'integer':
+                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
                 print('Unsupported Calculation with return type integer at ' + query_id)
             elif query_type == 'string':
                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
@@ -290,9 +317,13 @@ for logic_variable in logic_variables:
                         parameter = data.find("Parameters/Parameter").get('ref')
                         cmp_computation_script.text = "TRIM(" + parameter + ")"
                     else:
+                        variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
                         print('Unsupported Calculation string manipulation at ' + query_id)
             else:
+                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
                 print('Unsupported Calculation return type at ' + query_id)
+
+            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
 
         elif variable_type == "DynamicMultipleChoiceQuestion":
             # DMCQ derives source mostly from CALC
@@ -304,19 +335,14 @@ for logic_variable in logic_variables:
             device = data.get("Device") or ""
             multiple_select_toggle = data.get("MultipleSelectToggle") or ""
 
-            variables[variable_type][query_id] = {}
-            variables[variable_type][query_id].update({
-                "Name":query_name,
-                "DataType":query_type,
-                "Layout":layout,
-                "Priority":priority,
-                "Topic":topic,
-                "Question":question,
-                "Device":device,
-                "MultipleSelectToggle":multiple_select_toggle,
-                "ResponseSource":response_source})
+            # @ todo create a POC to recreate similar structure
+            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+            variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+
         else:
+            variables["Stats"]["unknown"] = variables["Stats"]["unknown"] + 1
             print("Unsupported variable at " + query_id)
+
     elif logic_variable.tag == "Condition":
         # Condition in Hotdocs are calculations that have boolean return value
         data = query_details[1]
@@ -324,27 +350,17 @@ for logic_variable in logic_variables:
 
         if variable_type == "Calculation":
             # @todo observe the output list and determine next action plan
-            pass_repeat_index = data.get("PassRepeatIndex") or ""
-            script = data.find("script").text or ""
-            parameters = data.find("Parameters")
-            variables["Condition"][query_id] = {}
-            variables["Condition"][query_id].update({
-                "Name":query_name,
-                "PassRepeatIndex":pass_repeat_index,
-                "script":script})
-            variables["Condition"][query_id]["Parameters"] = {}
 
-            for parameter in parameters:
-                parameter_name = parameter.get("name") or ""
-                parameter_ref = parameter.get("ref") or ""
+            # we track this for statistics only, ignore processing this type of variable since we do not know
+            # how the script was exactly formulated
+            variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
 
-                # items to be added should be key:val pair else only the last
-                # in the list will be added
-                variables["Condition"][query_id]["Parameters"].update({parameter_name:parameter_ref})
-        elif variable_type == "ConditionExpression":                
+        elif variable_type == "ConditionExpression":
             # we do not need to process _Known.No structure since we can achieved the same structure using
             # if/else structure on HotDocs Author
             if (query_name.lower().find('known') > 0) and (query_name.lower().find('no') > 0):
+                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
                 print("Ignoring condition at " + query_id)
             else:
                 # deal with multiple conditions, negation condition, or simple variable value test
@@ -377,6 +393,7 @@ for logic_variable in logic_variables:
                             if operator.get('Value') is not None:
                                 condition_expr = variable_name +" == '"+ variable_value+"'"
                             else:
+                                variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                                 print("Value required at condition " + query_id)
                         elif operator.tag == 'UseCondition':
                             # this is probably derived condition
@@ -384,6 +401,7 @@ for logic_variable in logic_variables:
                             variable_name = variable_name.replace('.', '_')
                             condition_expr = "IF "+variable_name+" RESULT TRUE END IF"
                         else:
+                            variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                             print("Unsupported ConditionExpression at " + query_id)
 
                         stack2.append(condition_expr)
@@ -417,6 +435,7 @@ for logic_variable in logic_variables:
                                             else:
                                                 condition_expr = "("+variable_name+" == '')"
                                         else:
+                                            variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                                             print("Unexpected element while processing ConditionExpression at " + query_id)
                                     else:
                                         # temp stack contains assembled conditions
@@ -425,6 +444,7 @@ for logic_variable in logic_variables:
                                     condition_expr = "(NOT " + condition_expr + ")"
                                     stack2.append(condition_expr)
                                 else:
+                                    variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                                     print("Missing operand for NOT condition on " + query_id)
                             else:
                                 # we are now handling compound conditions
@@ -465,6 +485,7 @@ for logic_variable in logic_variables:
                                     condition_expr = "(" + operand1 + " " + operator.upper() + " " + operand2 + ")"
                                     stack2.append(condition_expr)
                                 else:
+                                    variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
                                     print("Incomplete operands for " + operator +" on " + query_id)
                 
                 variable_name = query_name.replace('.', '_')
@@ -477,7 +498,7 @@ for logic_variable in logic_variables:
                 condition_expr = stack2.pop()
                 cmp_computation_script.text = condition_expr
 
-            variables["Condition"][query_id] = {}
+                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
 
     elif logic_variable.tag == "Repeat":
         # repeats in Hotdocs are just bundled variables in a Dialog variable and returns a List Record
@@ -502,18 +523,6 @@ for logic_variable in logic_variables:
             if data.find("DefaultText") is not None:
                 default_text_data = data.find("DefaultText").text
 
-                variables[variable_type][query_id] = {}
-                variables[variable_type][query_id].update({
-                    "Name":query_name,
-                    "DataType":query_type,
-                    "Layout":layout,
-                    "Priority":priority,
-                    "Topic":topic,
-                    "Question":question,
-                    "Rows":rows,
-                    "Columns":columns,
-                    "ExampleText":example_text,
-                    "DefaultText":default_text_data})
         elif variable_type == "Calculation":
             pass_repeat_index = data.get("PassRepeatIndex") or ""
 
@@ -521,28 +530,51 @@ for logic_variable in logic_variables:
             script = data.find("script").text or ""
             explanatory_blurb = data.find("ExplanatoryBlurb") or ""
             parameters = data.find("Parameters")
-            variables[variable_type][query_id] = {}
-            variables[variable_type][query_id].update({
-                "Name":query_name,
-                "DataType":query_type,
-                "PassRepeatIndex":pass_repeat_index,
-                "script":script,
-                "ExplanatoryBlurb":explanatory_blurb})
-            variables[variable_type][query_id]["Parameters"] = {}
 
-            for parameter in parameters:
-                parameter_name = parameter.get("name") or ""
-                parameter_ref = parameter.get("ref") or ""
+        # repeats in Hotdocs are controlled by Dialog variables so we only need this info for stats
+        variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+        variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
 
-                # items to be added should be key:val pair else only the last
-                # in the list will be added
-                variables[variable_type][query_id]["Parameters"].update({parameter_name:parameter_ref})            
+# group together relevant variables
+for topic in variables["Data"].keys():
+    # remove special chars
+    variable_name = topic.replace('\'','_')
+    variable_name = variable_name.replace('/','_')
+    variable_name = variable_name.replace('-','_')
+    variable_name = variable_name.replace('(','_')
+    variable_name = variable_name.replace(')','_')
+    variable_name = variable_name.replace(' ','')
 
-with open('data.json', 'w') as f:
-    json.dump(variables, f, indent=4)
+    if variable_name.find('_s') != -1:
+        variable_name = variable_name.replace('_s', '_')
+
+    if variable_name.find('__') != -1:
+        variable_name = variable_name.replace('__', '_')
+
+    cmp_dialog = ET.SubElement(cmp_components, '{'+namespace+'}dialog')
+    cmp_dialog.set('name', variable_name)
+    cmp_dialog.set('showChildButtons', 'false')
+    cmp_dialog_title = ET.SubElement(cmp_dialog, '{'+namespace+'}title')
+    cmp_dialog_title.text = topic
+    cmp_dialog_contents = ET.SubElement(cmp_dialog, '{'+namespace+'}contents')
+
+    # sorting using python's native sorted() on dict items gives inconsistent results
+    iteration_keys = list(variables["Data"][topic].keys())
+    sorted_keys = sorted(iteration_keys, reverse=True)
+
+    for key in sorted_keys:
+        cmp_dialog_contents_item = ET.SubElement(cmp_dialog_contents, '{'+namespace+'}item')
+        cmp_dialog_contents_item.set('name', variables["Data"][topic][key]["Name"])
+
+    cmp_dialog_prompt_position = ET.SubElement(cmp_dialog, '{'+namespace+'}promptPosition')
+    cmp_dialog_prompt_position.set('type', 'left')
+    cmp_dialog_prompt_position.set('maxUnits', '30')
 
 # create a new XML file with the results
 tree = ET.ElementTree(cmp_root)
 
 #@see https://stackoverflow.com/questions/15356641/how-to-write-xml-declaration-using-xml-etree-elementtree
 tree.write(cmp_filename, encoding='utf-8', xml_declaration=True, method = 'xml')
+
+with open('data.json', 'w') as f:
+    json.dump(variables, f, indent=4)
