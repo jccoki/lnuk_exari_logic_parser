@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 from pathlib import Path
 import argparse
 import xml.etree.ElementTree as ET
@@ -9,7 +8,7 @@ def convert_logic_file( logic_file ):
     tree = ET.parse(logic_file)
     lgc_root = tree.getroot()
 
-    #@todo make this configurable in an external file
+    # @todo make this configurable in an external file
     namespace = 'http://www.hotdocs.com/schemas/component_library/2009'
     ET.register_namespace('hd', namespace)
 
@@ -18,7 +17,7 @@ def convert_logic_file( logic_file ):
 
     cmp_preferences = ET.SubElement(cmp_root, '{'+namespace+'}preferences')
 
-    #@todo make this configurable in an external file
+    # @todo make this configurable in an external file
     prefs = {'MAX_REPEAT_COUNT':'100', 'MAX_STACK_DEPTH':'100'}
     for key in prefs.keys():
         preference = ET.SubElement(cmp_preferences, '{'+namespace+'}preference')
@@ -29,15 +28,16 @@ def convert_logic_file( logic_file ):
     variables["Stats"] = {"total": 0, "ignored": 0, "error": 0, "unknown": 0}
     variables["MultipleChoiceQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["UserTextQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
-    variables["Calculation"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
-    variables["DynamicMultipleChoiceQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
-    variables["ConditionExpression"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
-    variables["SmartPhrase"] = {"stats": {"total": 0, "ignored":0, "error": 0}, "data": {}}
-
+    variables["Calculation"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["DynamicMultipleChoiceQuestion"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["ConditionExpression"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["SmartPhrase"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["Repeat"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["Data"] = {}
 
-    # fetch all logic variable elems
     cmp_components = ET.SubElement(cmp_root, '{'+namespace+'}components')
+
+    # fetch all logic variable elems
     logic_variables = lgc_root.findall("./LogicSetup/Variables/")
 
     for logic_variable in logic_variables:
@@ -46,7 +46,7 @@ def convert_logic_file( logic_file ):
         query_details = lgc_root.find("./LogicSetup/Queries/Query[@name='" + query_id + "']")
         query_type = logic_variable.get('type')
 
-        variables["Stats"]["total"] = variables["Stats"]["total"] + 1
+        variables["Stats"]["total"] = int(variables["Stats"]["total"]) + 1
 
         # fetch non boolean variables
         if logic_variable.tag == "Variable":
@@ -67,8 +67,6 @@ def convert_logic_file( logic_file ):
 
             # @note there is no such thing as questionnaire specific guidance notes in HotDocs
             if variable_type == "MultipleChoiceQuestion":
-                #priority = data.get("Priority") or ""
-                #topic = data.find("Topic").text
                 question = data.find("Question").text
                 cardinality = data.get("Cardinality") or "Single"
 
@@ -120,23 +118,18 @@ def convert_logic_file( logic_file ):
                 # HotDocs requires a newline char after the QUIT keywork on option table
                 cmp_mcq_option_table_script.text = 'QUIT\n'+ json.dumps(cmp_mcq_option_table_fields)
 
-                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
-
                 # arrange MCQs based on topic
-                #variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
-                print("processing " + query_id)
                 if (data.get("Priority") is None) or (data.get("Priority") == ""):
                     priority = 0
                 else:
                     priority = float(data.get("Priority"))
 
                 variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "UserTextQuestion":
-                #priority = data.get("Priority") or ""
                 rows = data.get("Rows") or "1"
                 columns = data.get("Columns") or "20"
-                #topic = data.find("Topic").text
                 question = data.find("Question").text
 
                 # all UTQ specific variables should not have periods on variables names
@@ -161,7 +154,7 @@ def convert_logic_file( logic_file ):
                     cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
                     cmp_utq_field_width.set('widthType', 'exact')
                     cmp_utq_field_width.set('exactWidth', columns)
-                elif (query_type == "integer") or (query_type == "positiveInteger") or (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank"):
+                elif (query_type == "integer") or (query_type == "positiveInteger") or (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank") or (query_type == "NonNegativeIntegerOrNothing"):
                     # integer data types
                     cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}number')
                     cmp_utq.set('name', query_name)
@@ -192,10 +185,7 @@ def convert_logic_file( logic_file ):
                     if data.find("ExampleText") is not None:
                         example_text = data.find("ExampleText").text
 
-                    default_text_data = ""
                     if data.find("DefaultText") is not None:
-                        cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
-
                         default_text = data.find("DefaultText")
                         # parsing of XML nodes is unpredictable so do not process default text that contains mixed text node and sub elems
                         # only process text OR single InsertVariable sub elem
@@ -203,17 +193,20 @@ def convert_logic_file( logic_file ):
                         # report those UserTextQuestion that contains ConditionalPhrase or multiple sub elems
                         sub_elem_count = len(list(default_text))
                         if default_text.text is not None and sub_elem_count == 0:
-                            default_text_data = default_text.text
-                            cmp_utq_defMergeProps.set('unansweredText', default_text_data)
+                            cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
+                            cmp_utq_defMergeProps.set('unansweredText', default_text.text)
                         elif default_text.text is None and sub_elem_count > 0:
                             if(default_text.find("ConditionalPhrase")) is not None:
-                                variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                 print("Unsupported default text sub element")
                             else:
-                                default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
-                                cmp_utq_defMergeProps.set('unansweredText', default_text_data)
+                                # @notes Hotdocs does not have support to variable as default value
+                                # default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
+                                # cmp_utq_defMergeProps.set('unansweredText', default_text_data)
+                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                print("Unsupported default text structure at " + query_id)
                         else:
-                            variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                            variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                             print("Unsupported default text structure at " + query_id)
 
                     cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
@@ -226,18 +219,18 @@ def convert_logic_file( logic_file ):
                         cmp_utq_multi_line = ET.SubElement(cmp_utq, '{'+namespace+'}multiLine')
                         cmp_utq_multi_line.set('height', rows)
                 else:
-                    variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                    # @note repeats are also UTQs with NonNegativeIntegerOrNothing datatype
+                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                     print("Unsupported UserTextQuestion datatype at " + query_id)
 
-                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
-
                 # arrange UTQs based on topic
-                #variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
                 if (data.get("Priority") is None) or (data.get("Priority") == ""):
                     priority = 0
                 else:
                     priority = float(data.get("Priority"))
+
                 variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "SmartPhrase":
                 # can only process well-formed simple smartphrases
@@ -273,7 +266,7 @@ def convert_logic_file( logic_file ):
                             else:
                                 script_string = script_string + "\n"
                         else:
-                            variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                            variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                             print("Unexpected element on SmartPhrase at " + query_id)
 
                         ctr = ctr + 1
@@ -287,43 +280,47 @@ def convert_logic_file( logic_file ):
                     cmp_sp_script.text = script_string
 
                 else:
-                    variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
-                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "Calculation":
                 # @note calculation in HotDocs does not use JS
-                # @note there is no repeatIndex concept in HotDocs and repeatition is done
-                # using Dialog variables
+                # @note there is no repeatIndex concept in HotDocs and repeatition is done using Dialog variables
                 query_name = query_name.replace('.', '')
                 if query_type == 'integer':
-                    variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                     print('Unsupported Calculation with return type integer at ' + query_id)
                 elif query_type == 'string':
-                    cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-                    cmp_computation.set('name', query_name)
-                    cmp_computation.set('resultType', 'text')
-                    cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
-
                     # strip newline chars
                     if query_name.lower().find("removeblanks") != -1:
+                        cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                        cmp_computation.set('name', query_name)
+                        cmp_computation.set('resultType', 'text')
+                        cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+
                         # we expect only 1 parameter is declared
                         parameter = data.find("Parameters/Parameter").get('ref')
                         cmp_computation_script.text = "REPLACE(" + parameter + ", '\p', ', ')"
                     else:
                         # add support to TRIM calculations on UTQ variables
                         if query_name.lower().find("trim") != -1:
+                            cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                            cmp_computation.set('name', query_name)
+                            cmp_computation.set('resultType', 'text')
+                            cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+
                             # we expect only 1 parameter is declared
                             parameter = data.find("Parameters/Parameter").get('ref')
                             cmp_computation_script.text = "TRIM(" + parameter + ")"
                         else:
-                            variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                            variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                             print('Unsupported Calculation string manipulation at ' + query_id)
                 else:
-                    variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                     print('Unsupported Calculation return type at ' + query_id)
 
-                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "DynamicMultipleChoiceQuestion":
                 # DMCQ derives source mostly from CALC
@@ -335,12 +332,12 @@ def convert_logic_file( logic_file ):
                 device = data.get("Device") or ""
                 multiple_select_toggle = data.get("MultipleSelectToggle") or ""
 
-                # @ todo create a POC to recreate similar structure
-                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
-                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                # @todo create a POC to recreate similar structure
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
             else:
-                variables["Stats"]["unknown"] = variables["Stats"]["unknown"] + 1
+                variables["Stats"]["unknown"] = int(variables["Stats"]["unknown"]) + 1
                 print("Unsupported variable at " + query_id)
 
         elif logic_variable.tag == "Condition":
@@ -349,18 +346,15 @@ def convert_logic_file( logic_file ):
             variable_type = data.tag
 
             if variable_type == "Calculation":
-                # @todo observe the output list and determine next action plan
-
                 # we track this for statistics only, ignore processing this type of variable since we do not know
                 # how the script was exactly formulated
-                variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
-                variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+                variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
             elif variable_type == "ConditionExpression":
                 # we do not need to process _Known.No structure since we can achieved the same structure using
                 # if/else structure on HotDocs Author
                 if (query_name.lower().find('known') > 0) and (query_name.lower().find('no') > 0):
-                    variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                     print("Ignoring condition at " + query_id)
                 else:
                     # deal with multiple conditions, negation condition, or simple variable value test
@@ -393,7 +387,7 @@ def convert_logic_file( logic_file ):
                                 if operator.get('Value') is not None:
                                     condition_expr = variable_name +" == '"+ variable_value+"'"
                                 else:
-                                    variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                     print("Value required at condition " + query_id)
                             elif operator.tag == 'UseCondition':
                                 # this is probably derived condition
@@ -401,7 +395,7 @@ def convert_logic_file( logic_file ):
                                 variable_name = variable_name.replace('.', '_')
                                 condition_expr = "IF "+variable_name+" RESULT TRUE END IF"
                             else:
-                                variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                 print("Unsupported ConditionExpression at " + query_id)
 
                             stack2.append(condition_expr)
@@ -435,7 +429,7 @@ def convert_logic_file( logic_file ):
                                                 else:
                                                     condition_expr = "("+variable_name+" == '')"
                                             else:
-                                                variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                                 print("Unexpected element while processing ConditionExpression at " + query_id)
                                         else:
                                             # temp stack contains assembled conditions
@@ -444,7 +438,7 @@ def convert_logic_file( logic_file ):
                                         condition_expr = "(NOT " + condition_expr + ")"
                                         stack2.append(condition_expr)
                                     else:
-                                        variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                         print("Missing operand for NOT condition on " + query_id)
                                 else:
                                     # we are now handling compound conditions
@@ -485,7 +479,7 @@ def convert_logic_file( logic_file ):
                                         condition_expr = "(" + operand1 + " " + operator.upper() + " " + operand2 + ")"
                                         stack2.append(condition_expr)
                                     else:
-                                        variables[variable_type]["stats"]["error"] = variables[variable_type]["stats"]["error"] + 1
+                                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                         print("Incomplete operands for " + operator +" on " + query_id)
 
                     variable_name = query_name.replace('.', '_')
@@ -498,7 +492,7 @@ def convert_logic_file( logic_file ):
                     condition_expr = stack2.pop()
                     cmp_computation_script.text = condition_expr
 
-                    variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
         elif logic_variable.tag == "Repeat":
             # repeats in Hotdocs are just bundled variables in a Dialog variable and returns a List Record
@@ -532,8 +526,8 @@ def convert_logic_file( logic_file ):
                 parameters = data.find("Parameters")
 
             # repeats in Hotdocs are controlled by Dialog variables so we only need this info for stats
-            variables[variable_type]["stats"]["total"] = variables[variable_type]["stats"]["total"] + 1
-            variables[variable_type]["stats"]["ignored"] = variables[variable_type]["stats"]["ignored"] + 1
+            variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+            variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
     # group together relevant variables
     for topic in variables["Data"].keys():
@@ -574,6 +568,16 @@ def convert_logic_file( logic_file ):
     tree = ET.ElementTree(cmp_root)
 
     with open('data.json', 'w') as f:
+        variables["Stats"]["ignored"] = int(variables["MultipleChoiceQuestion"]["stats"]["ignored"]) + \
+            int(variables["UserTextQuestion"]["stats"]["ignored"]) + int(variables["Calculation"]["stats"]["ignored"]) + \
+            int(variables["DynamicMultipleChoiceQuestion"]["stats"]["ignored"]) + int(variables["ConditionExpression"]["stats"]["ignored"]) + \
+            int(variables["SmartPhrase"]["stats"]["ignored"]) + int(variables["Repeat"]["stats"]["ignored"])
+
+        variables["Stats"]["error"] = int(variables["MultipleChoiceQuestion"]["stats"]["error"]) + \
+            int(variables["UserTextQuestion"]["stats"]["error"]) + int(variables["Calculation"]["stats"]["error"]) + \
+            int(variables["DynamicMultipleChoiceQuestion"]["stats"]["error"]) + int(variables["ConditionExpression"]["stats"]["error"]) + \
+            int(variables["SmartPhrase"]["stats"]["error"]) + int(variables["Repeat"]["stats"]["error"])
+
         json.dump(variables, f, indent=4)
 
     return tree
