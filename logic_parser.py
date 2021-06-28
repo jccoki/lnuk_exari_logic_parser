@@ -577,7 +577,9 @@ def convert_logic_file( logic_file ):
     # create a new XML file with the results
     tree = ET.ElementTree(cmp_root)
 
-    with open('data.json', 'w') as f:
+    json_file_name = str(Path(logic_file).stem + '.json').lower()
+
+    with open(json_file_name, 'w') as f:
         variables["Stats"]["ignored"] = int(variables["MultipleChoiceQuestion"]["stats"]["ignored"]) + \
             int(variables["UserTextQuestion"]["stats"]["ignored"]) + int(variables["Calculation"]["stats"]["ignored"]) + \
             int(variables["DynamicMultipleChoiceQuestion"]["stats"]["ignored"]) + int(variables["ConditionExpression"]["stats"]["ignored"]) + \
@@ -607,29 +609,29 @@ if args.input:
     input_logic_file = args.input
     if Path(input_logic_file).suffix.lower() == ".lgc":
         # return value is type <ElementTree>
-        cmp_logic_contents = convert_logic_file( Path(input_logic_file).name )
+        cmp_logic_contents = convert_logic_file( input_logic_file )
+
+        output_directory = ""
+        if args.output:
+            output_directory = Path(args.output)
+        else:
+            output_directory = Path(Path.cwd(), "output")
+
+        if not output_directory.exists():
+            # create the directory but raise alarms if it does not exist
+            output_directory.mkdir(parents=False, exist_ok=False)
+
+        base_name = Path(input_logic_file).stem
+        cmp_file_name = base_name + '.cmp'
+        cmp_file_path = Path(output_directory, cmp_file_name)
+
+        #@see https://stackoverflow.com/questions/15356641/how-to-write-xml-declaration-using-xml-etree-elementtree
+        cmp_logic_contents.write(cmp_file_path, encoding='utf-8', xml_declaration=True, method = 'xml')
     else:
         print("Invalid input file")
 
-    output_directory = ""
-    if args.output:
-        output_directory = Path(args.output)
-    else:
-        output_directory = Path(Path.cwd(), "output")
-
-    if not output_directory.exists():
-        # create the directory but raise alarms if it does not exist
-        output_directory.mkdir(parents=False, exist_ok=False)
-
-    base_name = Path(input_logic_file).stem
-    cmp_file_name = base_name + '.cmp'
-    cmp_file_path = Path(output_directory, cmp_file_name)
-
-    #@see https://stackoverflow.com/questions/15356641/how-to-write-xml-declaration-using-xml-etree-elementtree
-    cmp_logic_contents.write(cmp_file_path, encoding='utf-8', xml_declaration=True, method = 'xml')
-
 else:
-    print("Please specify input file. See create.py -h for details")
+    print("Please specify input file. See logic_parser.exe -h for details")
 
 
 
