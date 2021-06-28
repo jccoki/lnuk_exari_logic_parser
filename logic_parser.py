@@ -33,6 +33,7 @@ def convert_logic_file( logic_file ):
     variables["ConditionExpression"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["SmartPhrase"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["Repeat"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["IncrementingRepeat"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["Data"] = {}
 
     cmp_components = ET.SubElement(cmp_root, '{'+namespace+'}components')
@@ -529,6 +530,9 @@ def convert_logic_file( logic_file ):
                 script = data.find("script").text or ""
                 explanatory_blurb = data.find("ExplanatoryBlurb") or ""
                 parameters = data.find("Parameters")
+            elif variable_type == "IncrementingRepeat":
+                topic = data.find("Topic").text
+                question = data.find("Question").text
 
             # repeats in Hotdocs are controlled by Dialog variables so we only need this info for stats
             variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
@@ -617,11 +621,13 @@ if args.input:
         # create the directory but raise alarms if it does not exist
         output_directory.mkdir(parents=False, exist_ok=False)
 
-    cmp_filename = Path(input_logic_file).stem + '.cmp'
-    cmp_filename = Path(output_directory, cmp_filename)
+    base_name = Path(input_logic_file).stem
+    cmp_file_name = base_name + '.cmp'
+    cmp_file_path = Path(output_directory, cmp_file_name)
 
     #@see https://stackoverflow.com/questions/15356641/how-to-write-xml-declaration-using-xml-etree-elementtree
-    cmp_logic_contents.write(cmp_filename, encoding='utf-8', xml_declaration=True, method = 'xml')
+    cmp_logic_contents.write(cmp_file_path, encoding='utf-8', xml_declaration=True, method = 'xml')
+
 else:
     print("Please specify input file. See create.py -h for details")
 
