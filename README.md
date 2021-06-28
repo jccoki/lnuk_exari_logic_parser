@@ -3,6 +3,6 @@
 This script is designed to generate corresponding HotDocs CMP logic file using Exari logic file.
 
 ## Usage
-To use the script, run `python logic_parser.py --input "<input_file_path>"` on the command prompt
+Get the executable file from `dist/` folder and run `logic_parser.exe --input "<input_file_path>"` on the command prompt
 
-For more details on using the script, run `python logic_parser.py -h`
+For more details on using the script, run `logic_parser.exe -h`
