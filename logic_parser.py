@@ -76,8 +76,10 @@ def convert_logic_file( logic_file ):
 
                 # @note HotDocs single select variable also may not require answer but there is no
                 # info in Exari logic determine this
-                if (cardinality == 'MultipleOrNone'):
-                    cmp_mcq.set('warnIfUnanswered', 'False')
+
+                # @warn warnIfUnanswered flag causes the CMP to fail on component studio
+                #if (cardinality == 'MultipleOrNone'):
+                #    cmp_mcq.set('warnIfUnanswered', 'False')
 
                 cmp_mcq_prompt = ET.SubElement(cmp_mcq, '{'+namespace+'}prompt')
                 cmp_mcq_prompt.text = question
@@ -133,15 +135,17 @@ def convert_logic_file( logic_file ):
                 # all UTQ specific variables should not have periods on variables names
                 # periods will be replaced with underscore and should be specific to conditions as much as possible
                 # @action should be the same with Exari to Hotdocs templater
-                query_name = query_name.replace('.', '')
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '')
+                # @note Hotdocs has maximum lenght of 100 for variable name
+                if len(variable_name) > 99:
+                    variable_name = variable_name[0:95]
+                    print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
 
                 if (query_type == "Date-DDMonthYYYY-AllowBlank") or (query_type == "Date-DDMMYYYY-AllowBlank"):
                     # date datatypes
                     cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}date')
-                    cmp_utq.set('name', query_name)
-
-                    if(query_type.find('AllowBlank') != -1):
-                        cmp_utq.set('warnIfUnanswered', 'False')
+                    cmp_utq.set('name', variable_name)
 
                     cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
                     # @todo make this configurable
@@ -154,10 +158,9 @@ def convert_logic_file( logic_file ):
                 elif (query_type == "integer") or (query_type == "positiveInteger") or (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank") or (query_type == "NonNegativeIntegerOrNothing"):
                     # integer data types
                     cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}number')
-                    cmp_utq.set('name', query_name)
+                    cmp_utq.set('name', variable_name)
 
                     if query_type == "Number-3d-3d-3d.00-AllowBlank":
-                        cmp_utq.set('warnIfUnanswered', 'False')
                         cmp_utq.set('decimalPlaces', '2')
 
                     cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
@@ -171,7 +174,7 @@ def convert_logic_file( logic_file ):
                 elif (query_type == "string") or (query_type == "NonEmptyString"):
                     # string datatypes
                     cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
-                    cmp_utq.set('name', query_name)
+                    cmp_utq.set('name', variable_name)
 
                     # HotDocs does not have equivalent example text structure
                     example_text = ""
@@ -265,7 +268,15 @@ def convert_logic_file( logic_file ):
                         ctr = ctr + 1
 
                     cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-                    cmp_sp.set('name', query_name)
+
+                    variable_name = query_name
+                    variable_name = variable_name.replace('.', '')
+                    # @note Hotdocs has maximum lenght of 100 for variable name
+                    if len(variable_name) > 99:
+                        variable_name = variable_name[0:95]
+                        print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
+
+                    cmp_sp.set('name', variable_name)
                     cmp_sp.set('resultType', 'text')
                     cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
 
@@ -281,7 +292,12 @@ def convert_logic_file( logic_file ):
                 # @note calculation in HotDocs does not use JS
                 # @note repetition is done using Dialog variables
                 # @action should be the same with Exari to Hotdocs templater
-                variable_name = query_name.replace('.', '')
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '')
+                # @note Hotdocs has maximum lenght of 100 for variable name
+                if len(variable_name) > 99:
+                    variable_name = variable_name[0:95]
+                    print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
                 if query_type == 'integer':
                     variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                     print('Unsupported Calculation with return type integer at ' + query_id)
@@ -295,7 +311,7 @@ def convert_logic_file( logic_file ):
 
                         # we expect only 1 parameter is declared
                         parameter = data.find("Parameters/Parameter").get('ref')
-                        cmp_computation_script.text = "REPLACE(" + parameter + ", \"\r\", \", \")"
+                        cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
                     else:
                         # add support to TRIM calculations on UTQ variables
                         if query_name.lower().find("trim") != -1:
@@ -427,13 +443,7 @@ def convert_logic_file( logic_file ):
                                         # temp stack contains assembled conditions
                                         condition_expr = operand1
 
-                                    start_expr = ""
-                                    end_expr = ""
-                                    if query_name.lower().find('known.yes') > 0:
-                                        start_expr = "("
-                                        end_expr = ")"
-
-                                    condition_expr = start_expr + "NOT " + condition_expr + end_expr
+                                    condition_expr = "( NOT " + condition_expr + ")"
 
                                     if query_name.lower().find('known.yes') > 0:
                                         condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
@@ -488,7 +498,15 @@ def convert_logic_file( logic_file ):
                 variable_part1 = query_name[0:query_name.rfind('.')].replace('.', '')
                 variable_part2 = query_name[query_name.rfind('.'):len(query_name)]
                 variable_name = variable_part1 + variable_part2
+
                 variable_name = variable_name.replace('.', '_')
+                variable_name = variable_name.replace('-', '_')
+
+                # @note Hotdocs has maximum lenght of 100 for variable name
+                if len(variable_name) > 99:
+                    variable_name = variable_name[0:95]
+                    print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
+
                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                 cmp_computation.set('name', variable_name)
                 cmp_computation.set('resultType', 'trueFalse')
@@ -542,6 +560,7 @@ def convert_logic_file( logic_file ):
     for topic in variables["Data"].keys():
         # remove special chars
         variable_name = topic
+        variable_name = variable_name.replace(',','')
         variable_name = variable_name.replace('\'','')
         variable_name = variable_name.replace('/','')
         variable_name = variable_name.replace('-','')
