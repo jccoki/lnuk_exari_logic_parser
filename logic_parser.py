@@ -40,6 +40,7 @@ def convert_logic_file( logic_file ):
 
     # fetch all logic variable elems
     logic_variables = lgc_root.findall("./LogicSetup/Variables/")
+    error_msg = ""
 
     for logic_variable in logic_variables:
         query_id = logic_variable.get('query')
@@ -54,7 +55,7 @@ def convert_logic_file( logic_file ):
             # if variable has repeater, repeater elem becomes the second child elem
             # else the second child element determines the variable type
             # @note in HotDocs, repeater can only be used in a Dialog and can be used as basis for grouping
-            if query_details[1].tag == "Repeater":
+            if (query_details[1].tag == "Repeater") or (query_details[1].tag == "Comment"):
                 data = query_details[2]
             else:
                 data = query_details[1]
@@ -138,94 +139,100 @@ def convert_logic_file( logic_file ):
                 variable_name = query_name
                 variable_name = variable_name.replace('.', '')
                 # @note Hotdocs has maximum lenght of 100 for variable name
+                # @note we no longer trim variables names since there is a possibillity that there are trimmed
+                # variable names that have the same name
                 if len(variable_name) > 99:
-                    variable_name = variable_name[0:95]
-                    print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
+                    error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
+                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                else:
+                    if (query_type == "Date-DDMonthYYYY-AllowBlank") or (query_type == "Date-DDMMYYYY-AllowBlank"):
+                        # date datatypes
+                        cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}date')
+                        cmp_utq.set('name', variable_name)
 
-                if (query_type == "Date-DDMonthYYYY-AllowBlank") or (query_type == "Date-DDMMYYYY-AllowBlank"):
-                    # date datatypes
-                    cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}date')
-                    cmp_utq.set('name', variable_name)
+                        cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
+                        # @todo make this configurable
+                        cmp_utq_format.text = "d Mmmm yyyy"
+                        cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
+                        cmp_utq_prompt.text = question
+                        cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                        cmp_utq_field_width.set('widthType', 'exact')
+                        cmp_utq_field_width.set('exactWidth', columns)
+                    elif (query_type == "integer") or (query_type == "positiveInteger") or \
+                         (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank") or \
+                         (query_type == "NonNegativeIntegerOrNothing") or (query_type == "decimal") or \
+                         (query_type == "Number-CurrencyValue-GBP") or (query_type == "Number-Percentage-AllowBlank"):
+                        # integer data types
+                        cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}number')
+                        cmp_utq.set('name', variable_name)
 
-                    cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
-                    # @todo make this configurable
-                    cmp_utq_format.text = "d Mmmm yyyy"
-                    cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
-                    cmp_utq_prompt.text = question
-                    cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
-                    cmp_utq_field_width.set('widthType', 'exact')
-                    cmp_utq_field_width.set('exactWidth', columns)
-                elif (query_type == "integer") or (query_type == "positiveInteger") or (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank") or (query_type == "NonNegativeIntegerOrNothing"):
-                    # integer data types
-                    cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}number')
-                    cmp_utq.set('name', variable_name)
+                        if query_type == "Number-3d-3d-3d.00-AllowBlank":
+                            cmp_utq.set('decimalPlaces', '2')
 
-                    if query_type == "Number-3d-3d-3d.00-AllowBlank":
-                        cmp_utq.set('decimalPlaces', '2')
+                        cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
+                        # @todo make this configurable
+                        cmp_utq_format.text = "9,999.00"
+                        cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
+                        cmp_utq_prompt.text = question
+                        cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                        cmp_utq_field_width.set('widthType', 'exact')
+                        cmp_utq_field_width.set('exactWidth', columns)
+                    elif (query_type == "string") or (query_type == "NonEmptyString"):
+                        # string datatypes
+                        cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
+                        cmp_utq.set('name', variable_name)
 
-                    cmp_utq_format = ET.SubElement(cmp_utq, '{'+namespace+'}defFormat')
-                    # @todo make this configurable
-                    cmp_utq_format.text = "9,999.00"
-                    cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
-                    cmp_utq_prompt.text = question
-                    cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
-                    cmp_utq_field_width.set('widthType', 'exact')
-                    cmp_utq_field_width.set('exactWidth', columns)
-                elif (query_type == "string") or (query_type == "NonEmptyString"):
-                    # string datatypes
-                    cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
-                    cmp_utq.set('name', variable_name)
+                        # HotDocs does not have equivalent example text structure
+                        example_text = ""
+                        if data.find("ExampleText") is not None:
+                            example_text = data.find("ExampleText").text
 
-                    # HotDocs does not have equivalent example text structure
-                    example_text = ""
-                    if data.find("ExampleText") is not None:
-                        example_text = data.find("ExampleText").text
-
-                    if data.find("DefaultText") is not None:
-                        default_text = data.find("DefaultText")
-                        # parsing of XML nodes is unpredictable so do not process default text that contains mixed text node and sub elems
-                        # only process text OR single InsertVariable sub elem
-                        # we do not process ConditionalPhrase due to the same mixed text node and InsertVariable issue
-                        # report those UserTextQuestion that contains ConditionalPhrase or multiple sub elems
-                        sub_elem_count = len(list(default_text))
-                        if default_text.text is not None and sub_elem_count == 0:
-                            cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
-                            cmp_utq_defMergeProps.set('unansweredText', default_text.text)
-                        elif default_text.text is None and sub_elem_count > 0:
-                            if(default_text.find("ConditionalPhrase")) is not None:
-                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                print("Unsupported default text sub element")
+                        if data.find("DefaultText") is not None:
+                            default_text = data.find("DefaultText")
+                            # parsing of XML nodes is unpredictable so do not process default text that contains mixed text node and sub elems
+                            # only process text OR single InsertVariable sub elem
+                            # we do not process ConditionalPhrase due to the same mixed text node and InsertVariable issue
+                            # report those UserTextQuestion that contains ConditionalPhrase or multiple sub elems
+                            sub_elem_count = len(list(default_text))
+                            if default_text.text is not None and sub_elem_count == 0:
+                                cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
+                                cmp_utq_defMergeProps.set('unansweredText', default_text.text)
+                            elif default_text.text is None and sub_elem_count > 0:
+                                if(default_text.find("ConditionalPhrase")) is not None:
+                                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                                    error_msg = error_msg + "Unsupported default text sub element at " + query_id + "\n"
+                                else:
+                                    # @notes Hotdocs does not have support to variable as default value
+                                    # default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
+                                    # cmp_utq_defMergeProps.set('unansweredText', default_text_data)
+                                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                                    error_msg = error_msg + "Unsupported default text structure at " + query_id + "\n"
                             else:
-                                # @notes Hotdocs does not have support to variable as default value
-                                # default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
-                                # cmp_utq_defMergeProps.set('unansweredText', default_text_data)
-                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                print("Unsupported default text structure at " + query_id)
-                        else:
-                            variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                            print("Unsupported default text structure at " + query_id)
+                                variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                                error_msg = error_msg + "Unsupported default text structure at " + query_id + "\n"
 
-                    cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
-                    cmp_utq_prompt.text = question
-                    cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
-                    cmp_utq_field_width.set('widthType', 'exact')
-                    cmp_utq_field_width.set('exactWidth', columns)
+                        cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
+                        cmp_utq_prompt.text = question
+                        cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
+                        cmp_utq_field_width.set('widthType', 'exact')
+                        cmp_utq_field_width.set('exactWidth', columns)
 
-                    if int(rows) > 1:
-                        cmp_utq_multi_line = ET.SubElement(cmp_utq, '{'+namespace+'}multiLine')
-                        cmp_utq_multi_line.set('height', rows)
-                else:
-                    # @note repeats are also UTQs with NonNegativeIntegerOrNothing datatype
-                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                    print("Unsupported UserTextQuestion datatype at " + query_id)
+                        if int(rows) > 1:
+                            cmp_utq_multi_line = ET.SubElement(cmp_utq, '{'+namespace+'}multiLine')
+                            cmp_utq_multi_line.set('height', rows)
+                    else:
+                        # @note repeats are also UTQs with NonNegativeIntegerOrNothing datatype
+                        variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                        error_msg = error_msg + "Unsupported UserTextQuestion datatype at " + query_id + "\n"
 
-                # arrange UTQs based on topic
-                if (data.get("Priority") is None) or (data.get("Priority") == ""):
-                    priority = 0
-                else:
-                    priority = float(data.get("Priority"))
+                    # arrange UTQs based on topic
+                    if (data.get("Priority") is None) or (data.get("Priority") == ""):
+                        priority = 0
+                    else:
+                        priority = float(data.get("Priority"))
 
-                variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+                    variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "SmartPhrase":
@@ -240,7 +247,7 @@ def convert_logic_file( logic_file ):
                     else:
                         # InsertVariable elems in Exari does not have any equivalent structure
                         # in Hotdocs so we disregard the SmartPhrase
-                        print("Unsupported SmartPhrase structure at " + query_id)
+                        error_msg = error_msg + "Unsupported SmartPhrase structure at " + query_id + "\n"
                         smartphrase_conditions = []
                         break
 
@@ -263,26 +270,23 @@ def convert_logic_file( logic_file ):
                                 script_string = script_string + "\n"
                         else:
                             variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                            print("Unexpected element on SmartPhrase at " + query_id)
+                            error_msg = error_msg + "Unexpected element on SmartPhrase at " + query_id + "\n"
 
                         ctr = ctr + 1
-
-                    cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
 
                     variable_name = query_name
                     variable_name = variable_name.replace('.', '')
                     # @note Hotdocs has maximum lenght of 100 for variable name
                     if len(variable_name) > 99:
-                        variable_name = variable_name[0:95]
-                        print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
+                        error_msg = "Maximum variable name length on " + query_id + "\n"
+                    else:
+                        cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                        cmp_sp.set('name', variable_name)
+                        cmp_sp.set('resultType', 'text')
+                        cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
 
-                    cmp_sp.set('name', variable_name)
-                    cmp_sp.set('resultType', 'text')
-                    cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
-
-                    script_string = script_string + "END IF"
-                    cmp_sp_script.text = script_string
-
+                        script_string = script_string + "END IF"
+                        cmp_sp_script.text = script_string
                 else:
                     variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
@@ -296,25 +300,14 @@ def convert_logic_file( logic_file ):
                 variable_name = variable_name.replace('.', '')
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    variable_name = variable_name[0:95]
-                    print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
-                if query_type == 'integer':
-                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                    print('Unsupported Calculation with return type integer at ' + query_id)
-                elif query_type == 'string':
-                    # strip newline chars
-                    if query_name.lower().find("removeblanks") != -1:
-                        cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-                        cmp_computation.set('name', variable_name)
-                        cmp_computation.set('resultType', 'text')
-                        cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
-
-                        # we expect only 1 parameter is declared
-                        parameter = data.find("Parameters/Parameter").get('ref')
-                        cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
-                    else:
-                        # add support to TRIM calculations on UTQ variables
-                        if query_name.lower().find("trim") != -1:
+                    error_msg = "Maximum variable name length on " + query_id + "\n"
+                else:
+                    if query_type == 'integer':
+                        variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                        error_msg = "Unsupported Calculation with return type integer at " + query_id + "\n"
+                    elif query_type == 'string':
+                        # strip newline chars
+                        if query_name.lower().find("removeblanks") != -1:
                             cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                             cmp_computation.set('name', variable_name)
                             cmp_computation.set('resultType', 'text')
@@ -322,13 +315,24 @@ def convert_logic_file( logic_file ):
 
                             # we expect only 1 parameter is declared
                             parameter = data.find("Parameters/Parameter").get('ref')
-                            cmp_computation_script.text = "TRIM(" + parameter + ")"
+                            cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
                         else:
-                            variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                            print('Unsupported Calculation string manipulation at ' + query_id)
-                else:
-                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                    print('Unsupported Calculation return type at ' + query_id)
+                            # add support to TRIM calculations on UTQ variables
+                            if query_name.lower().find("trim") != -1:
+                                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                                cmp_computation.set('name', variable_name)
+                                cmp_computation.set('resultType', 'text')
+                                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+
+                                # we expect only 1 parameter is declared
+                                parameter = data.find("Parameters/Parameter").get('ref')
+                                cmp_computation_script.text = "TRIM(" + parameter + ")"
+                            else:
+                                variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                                error_msg = error_msg + "Unsupported Calculation string manipulation at " + query_id + "\n"
+                    else:
+                        variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                        error_msg = "Unsupported Calculation return type at " + query_id + "\n"
 
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
@@ -348,7 +352,7 @@ def convert_logic_file( logic_file ):
 
             else:
                 variables["Stats"]["unknown"] = int(variables["Stats"]["unknown"]) + 1
-                print("Unsupported variable at " + query_id)
+                error_msg = "Unsupported variable at " + query_id + "\n"
 
         elif logic_variable.tag == "Condition":
             # Condition in Hotdocs are calculations that have boolean return value
@@ -396,7 +400,7 @@ def convert_logic_file( logic_file ):
                                 condition_expr = variable_name +" = \""+ variable_value+"\""
                             else:
                                 variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                print("Value required at condition " + query_id)
+                                error_msg = error_msg + "Value required at condition " + query_id + "\n"
                         elif operator.tag == 'UseCondition':
                             # this is probably derived condition
                             variable_name = operator.get('IDREF')
@@ -404,7 +408,7 @@ def convert_logic_file( logic_file ):
                             condition_expr = "IF "+variable_name+" RESULT TRUE END IF"
                         else:
                             variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                            print("Unsupported ConditionExpression at " + query_id)
+                            error_msg = error_msg + "Unsupported ConditionExpression at " + query_id + "\n"
 
                         stack2.append(condition_expr)
                 else:
@@ -438,12 +442,12 @@ def convert_logic_file( logic_file ):
                                                 condition_expr = "("+variable_name+" = \"\")"
                                         else:
                                             variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                            print("Unexpected element while processing ConditionExpression at " + query_id)
+                                            error_msg = error_msg + "Unexpected element while processing ConditionExpression at " + query_id + "\n"
                                     else:
                                         # temp stack contains assembled conditions
                                         condition_expr = operand1
 
-                                    condition_expr = "( NOT " + condition_expr + ")"
+                                    condition_expr = "(NOT " + condition_expr + ")"
 
                                     if query_name.lower().find('known.yes') > 0:
                                         condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
@@ -451,7 +455,7 @@ def convert_logic_file( logic_file ):
                                     stack2.append(condition_expr)
                                 else:
                                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                    print("Missing operand for NOT condition on " + query_id)
+                                    error_msg = error_msg + "Missing operand for NOT condition on " + query_id + "\n"
                             else:
                                 # we are now handling compound conditions
                                 # only UseCondition elems should only be processed here
@@ -492,7 +496,7 @@ def convert_logic_file( logic_file ):
                                     stack2.append(condition_expr)
                                 else:
                                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                    print("Incomplete operands for " + operator +" on " + query_id)
+                                    error_msg = error_msg + "Incomplete operands for " + operator +" on " + query_id + "\n"
 
                 # @action should be the same with Exari to Hotdocs templater
                 variable_part1 = query_name[0:query_name.rfind('.')].replace('.', '')
@@ -504,17 +508,16 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    variable_name = variable_name[0:95]
-                    print("Maximum variable name length exceeded on " + query_id + ". Renamed variable to " + variable_name)
+                    error_msg = "Maximum variable name length on " + query_id + "\n"
+                else:
+                    cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                    cmp_computation.set('name', variable_name)
+                    cmp_computation.set('resultType', 'trueFalse')
+                    cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
 
-                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-                cmp_computation.set('name', variable_name)
-                cmp_computation.set('resultType', 'trueFalse')
-                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
-
-                # temp stack should contain the final condition
-                condition_expr = stack2.pop()
-                cmp_computation_script.text = condition_expr
+                    # temp stack should contain the final condition
+                    condition_expr = stack2.pop()
+                    cmp_computation_script.text = condition_expr
 
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
@@ -596,20 +599,24 @@ def convert_logic_file( logic_file ):
     # create a new XML file with the results
     tree = ET.ElementTree(cmp_root)
 
+    variables["Stats"]["ignored"] = int(variables["MultipleChoiceQuestion"]["stats"]["ignored"]) + \
+        int(variables["UserTextQuestion"]["stats"]["ignored"]) + int(variables["Calculation"]["stats"]["ignored"]) + \
+        int(variables["DynamicMultipleChoiceQuestion"]["stats"]["ignored"]) + int(variables["ConditionExpression"]["stats"]["ignored"]) + \
+        int(variables["SmartPhrase"]["stats"]["ignored"]) + int(variables["Repeat"]["stats"]["ignored"])
+
+    variables["Stats"]["error"] = int(variables["MultipleChoiceQuestion"]["stats"]["error"]) + \
+        int(variables["UserTextQuestion"]["stats"]["error"]) + int(variables["Calculation"]["stats"]["error"]) + \
+        int(variables["DynamicMultipleChoiceQuestion"]["stats"]["error"]) + int(variables["ConditionExpression"]["stats"]["error"]) + \
+        int(variables["SmartPhrase"]["stats"]["error"]) + int(variables["Repeat"]["stats"]["error"])
+
     json_file_name = str(Path(logic_file).stem + '.json').lower()
-
     with open(json_file_name, 'w') as f:
-        variables["Stats"]["ignored"] = int(variables["MultipleChoiceQuestion"]["stats"]["ignored"]) + \
-            int(variables["UserTextQuestion"]["stats"]["ignored"]) + int(variables["Calculation"]["stats"]["ignored"]) + \
-            int(variables["DynamicMultipleChoiceQuestion"]["stats"]["ignored"]) + int(variables["ConditionExpression"]["stats"]["ignored"]) + \
-            int(variables["SmartPhrase"]["stats"]["ignored"]) + int(variables["Repeat"]["stats"]["ignored"])
-
-        variables["Stats"]["error"] = int(variables["MultipleChoiceQuestion"]["stats"]["error"]) + \
-            int(variables["UserTextQuestion"]["stats"]["error"]) + int(variables["Calculation"]["stats"]["error"]) + \
-            int(variables["DynamicMultipleChoiceQuestion"]["stats"]["error"]) + int(variables["ConditionExpression"]["stats"]["error"]) + \
-            int(variables["SmartPhrase"]["stats"]["error"]) + int(variables["Repeat"]["stats"]["error"])
-
         json.dump(variables, f, indent=4)
+
+    report_file_name = str(Path(logic_file).stem + '.txt').lower()
+    report_file = open(report_file_name,"w")
+    report_file.write(error_msg)
+    report_file.close()
 
     return tree
 
