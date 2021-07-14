@@ -126,7 +126,7 @@ def convert_logic_file( logic_file ):
                 else:
                     priority = float(data.get("Priority"))
 
-                variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+                variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "UserTextQuestion":
@@ -183,35 +183,6 @@ def convert_logic_file( logic_file ):
                         cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
                         cmp_utq.set('name', variable_name)
 
-                        # HotDocs does not have equivalent example text structure
-                        example_text = ""
-                        if data.find("ExampleText") is not None:
-                            example_text = data.find("ExampleText").text
-
-                        if data.find("DefaultText") is not None:
-                            default_text = data.find("DefaultText")
-                            # parsing of XML nodes is unpredictable so do not process default text that contains mixed text node and sub elems
-                            # only process text OR single InsertVariable sub elem
-                            # we do not process ConditionalPhrase due to the same mixed text node and InsertVariable issue
-                            # report those UserTextQuestion that contains ConditionalPhrase or multiple sub elems
-                            sub_elem_count = len(list(default_text))
-                            if default_text.text is not None and sub_elem_count == 0:
-                                cmp_utq_defMergeProps = ET.SubElement(cmp_utq, '{'+namespace+'}defMergeProps')
-                                cmp_utq_defMergeProps.set('unansweredText', default_text.text)
-                            elif default_text.text is None and sub_elem_count > 0:
-                                if(default_text.find("ConditionalPhrase")) is not None:
-                                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                                    error_msg = error_msg + "Unsupported default text sub element at " + query_id + "\n"
-                                else:
-                                    # @notes Hotdocs does not have support to variable as default value
-                                    # default_text_data = "IDREF:" + default_text.find("InsertVariable").get("IDREF")
-                                    # cmp_utq_defMergeProps.set('unansweredText', default_text_data)
-                                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                                    error_msg = error_msg + "Unsupported default text structure at " + query_id + "\n"
-                            else:
-                                variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                                error_msg = error_msg + "Unsupported default text structure at " + query_id + "\n"
-
                         cmp_utq_prompt = ET.SubElement(cmp_utq, '{'+namespace+'}prompt')
                         cmp_utq_prompt.text = question
                         cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
@@ -232,7 +203,7 @@ def convert_logic_file( logic_file ):
                     else:
                         priority = float(data.get("Priority"))
 
-                    variables["Data"][topic][priority] = {"Name":query_name, "Priority":priority}
+                    variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
 
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
@@ -595,9 +566,9 @@ def convert_logic_file( logic_file ):
 
         # sorting using python's native sorted() on dict items gives inconsistent results
         iteration_keys = list(variables["Data"][topic].keys())
-        sorted_keys = sorted(iteration_keys, reverse=True)
+        #sorted_keys = sorted(iteration_keys, reverse=True)
 
-        for key in sorted_keys:
+        for key in iteration_keys:
             cmp_dialog_contents_item = ET.SubElement(cmp_dialog_contents, '{'+namespace+'}item')
             cmp_dialog_contents_item.set('name', variables["Data"][topic][key]["Name"])
 
