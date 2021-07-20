@@ -41,7 +41,7 @@ def convert_logic_file( logic_file ):
     # fetch all logic variable elems
     logic_variables = lgc_root.findall("./LogicSetup/Variables/")
     error_msg = ""
-    cond_search_str = ""
+    cond_search_str = {}
 
     for logic_variable in logic_variables:
         query_id = logic_variable.get('query')
@@ -250,7 +250,7 @@ def convert_logic_file( logic_file ):
                     variable_name = variable_name.replace('.', '')
                     # @note Hotdocs has maximum lenght of 100 for variable name
                     if len(variable_name) > 99:
-                        error_msg = "Maximum variable name length on " + query_id + "\n"
+                        error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
                     else:
                         cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                         cmp_sp.set('name', variable_name)
@@ -269,14 +269,23 @@ def convert_logic_file( logic_file ):
                 # @note repetition is done using Dialog variables
                 # @action should be the same with Exari to Hotdocs templater
                 variable_name = query_name
-                variable_name = variable_name.replace('.', '')
+                variable_name = variable_name.replace('.', '_')
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = "Maximum variable name length on " + query_id + "\n"
+                    error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
                 else:
                     if query_type == 'integer':
+                        if query_id == 'Query_134':
+                            print('gotcha')
                         variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                        error_msg = "Unsupported Calculation with return type integer at " + query_id + "\n"
+                        error_msg = error_msg + "Unsupported Calculation with return type integer at " + query_id + "\n"
+
+                        # create placeholder variable
+                        cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                        cmp_computation.set('name', variable_name)
+                        cmp_computation.set('resultType', 'number')
+                        cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                        cmp_computation_script.text = "1"
                     elif query_type == 'string':
                         # strip newline chars
                         if query_name.lower().find("removeblanks") != -1:
@@ -300,11 +309,20 @@ def convert_logic_file( logic_file ):
                                 parameter = data.find("Parameters/Parameter").get('ref')
                                 cmp_computation_script.text = "TRIM(" + parameter + ")"
                             else:
+                                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                                cmp_computation.set('name', variable_name)
+                                cmp_computation.set('resultType', 'text')
+                                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+
+                                # we expect only 1 parameter is declared
+                                parameter = data.find("Parameters/Parameter").get('ref')
+                                cmp_computation_script.text = variable_name
+
                                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                                 error_msg = error_msg + "Unsupported Calculation string manipulation at " + query_id + "\n"
                     else:
                         variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                        error_msg = "Unsupported Calculation return type at " + query_id + "\n"
+                        error_msg = error_msg + "Unsupported Calculation return type at " + query_id + "\n"
 
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
@@ -324,7 +342,7 @@ def convert_logic_file( logic_file ):
 
             else:
                 variables["Stats"]["unknown"] = int(variables["Stats"]["unknown"]) + 1
-                error_msg = "Unsupported variable at " + query_id + "\n"
+                error_msg = error_msg + "Unsupported variable at " + query_id + "\n"
 
         elif logic_variable.tag == "Condition":
             # Condition in Hotdocs are calculations that have boolean return value
@@ -339,6 +357,21 @@ def convert_logic_file( logic_file ):
                 # we track this for statistics only, ignore processing this type of variable since we do not know
                 # how the script was exactly formulated
                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_computation.set('name', variable_name)
+                cmp_computation.set('resultType', 'trueFalse')
+                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+
+                # we expect only 1 parameter is declared
+                param_ref = data.find("Parameters/Parameter").get('ref')
+                param_name = data.find("Parameters/Parameter").get('name')
+                param_script = data.find("script").text
+
+                script_data = param_script.replace(param_name, param_ref)
+                cmp_computation_script.text = script_data
 
             elif variable_type == "ConditionExpression":
                 # deal with multiple conditions, negation condition, or simple variable value test
@@ -358,6 +391,7 @@ def convert_logic_file( logic_file ):
 
                 # create infix notation using postfix stack structure
                 condition_expr = ""
+                derived_variable_name = ""
                 if len(stack1) == 1:
                     # stack 1 contains simple condition ie. generated from MCQ
                     operator = stack1.pop()
@@ -365,11 +399,13 @@ def convert_logic_file( logic_file ):
                         # for Test elems, strip periods on variable name
                         if operator.tag == 'Test':
                             variable_name = operator.get('IDREF')
-                            variable_name = variable_name.replace('.', '')
-                            variable_value = operator.get('Value')
+                            variable_name = variable_name.replace('.', '_')
 
-                            if operator.get('Value') is not None:
+                            variable_value = operator.get('Value')
+                            variable_value = variable_value.replace(' ', '')
+                            if variable_value is not None:
                                 condition_expr = variable_name +" = \""+ variable_value+"\""
+                                derived_variable_name = variable_name + "_" + variable_value
                             else:
                                 variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                 error_msg = error_msg + "Value required at condition " + query_id + "\n"
@@ -404,9 +440,10 @@ def convert_logic_file( logic_file ):
                                             condition_expr = condition_expr.replace('.', '_')
                                             condition_expr = condition_expr.replace('-', '_')
                                         elif operand1.tag == "Test":
+
                                             # for Test elems, strip periods on variable name
                                             variable_name = operand1.get('IDREF')
-                                            variable_name = variable_name.replace('.', '')
+                                            variable_name = variable_name.replace('.', '_')
                                             variable_value = operand1.get('Value')
 
                                             if variable_value is not None:
@@ -423,7 +460,10 @@ def convert_logic_file( logic_file ):
                                     condition_expr = "(NOT " + condition_expr + ")"
 
                                     if query_name.lower().find('known.yes') > 0:
-                                        condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
+                                        if query_type == 'string':
+                                            condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
+                                        else:
+                                            condition_expr = "ANSWERED("+ variable_name +")"
 
                                     stack2.append(condition_expr)
                                 else:
@@ -441,9 +481,10 @@ def convert_logic_file( logic_file ):
                                         if operand1.tag == "UseCondition":
                                             operand1 = operand1.get('IDREF')
                                             operand1 = operand1.replace('.', '_')
+                                            operand1 = operand1.replace('-', '_')
                                         elif operand1.tag == "Test":
                                             # for Test elems, strip periods on variable name
-                                            variable_name = operand1.get('IDREF').replace('.', '')
+                                            variable_name = operand1.get('IDREF').replace('.', '_')
                                             variable_value = operand1.get('Value')
                                             if variable_value is not None:
                                                 operand1 = "("+variable_name+" = \""+variable_value+"\")"
@@ -455,9 +496,10 @@ def convert_logic_file( logic_file ):
                                         if operand2.tag == "UseCondition":
                                             operand2 = operand2.get('IDREF')
                                             operand2 = operand2.replace('.', '_')
+                                            operand2 = operand2.replace('-', '_')
                                         elif operand2.tag == "Test":
                                             # for Test elems, strip periods on variable name
-                                            variable_name = operand2.get('IDREF').replace('.', '')
+                                            variable_name = operand2.get('IDREF').replace('.', '_')
                                             variable_value = operand2.get('Value')
                                             if variable_value is not None:
                                                 operand2 = "("+variable_name+" = \""+variable_value+"\")"
@@ -472,20 +514,19 @@ def convert_logic_file( logic_file ):
                                     error_msg = error_msg + "Incomplete operands for " + operator +" on " + query_id + "\n"
 
                 # @action should be the same with Exari to Hotdocs templater
-                variable_part1 = query_name[0:query_name.rfind('.')].replace('.', '')
-                variable_part2 = query_name[query_name.rfind('.'):len(query_name)]
-                variable_name = variable_part1 + variable_part2
-
-                variable_name = variable_name.replace('.', '_')
+                variable_name = query_name.replace('.', '_')
                 variable_name = variable_name.replace('-', '_')
+
+                if derived_variable_name != "":
+                    variable_name = derived_variable_name
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = "Maximum variable name length on " + query_id + "\n"
+                    error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
                 else:
-                    # there is already a variable with the same name
-                    if cond_search_str.find(variable_name) != -1:
-                        error_msg = error_msg + "Variable name already exists on " + query_id + "\n"
+                    # check if there is already a variable with the same name
+                    if variable_name in cond_search_str:
+                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                     else:
                         cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                         cmp_computation.set('name', variable_name)
@@ -497,7 +538,7 @@ def convert_logic_file( logic_file ):
                         cmp_computation_script.text = condition_expr
 
                         # add the variable name into search string
-                        cond_search_str = cond_search_str + variable_name
+                        cond_search_str[variable_name] = variable_name
 
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
@@ -524,6 +565,15 @@ def convert_logic_file( logic_file ):
                 if data.find("DefaultText") is not None:
                     default_text_data = data.find("DefaultText").text
 
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+                # create placeholder variable
+                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_computation.set('name', variable_name)
+                cmp_computation.set('resultType', 'number')
+                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                cmp_computation_script.text = "1"
+
             elif variable_type == "Calculation":
                 pass_repeat_index = data.get("PassRepeatIndex") or ""
 
@@ -531,9 +581,28 @@ def convert_logic_file( logic_file ):
                 script = data.find("script").text or ""
                 explanatory_blurb = data.find("ExplanatoryBlurb") or ""
                 parameters = data.find("Parameters")
+
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+                # create placeholder variable
+                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_computation.set('name', variable_name)
+                cmp_computation.set('resultType', 'number')
+                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                cmp_computation_script.text = "1"
+
             elif variable_type == "IncrementingRepeat":
                 topic = data.find("Topic").text
                 question = data.find("Question").text
+
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+                # create placeholder variable
+                cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                cmp_computation.set('name', variable_name)
+                cmp_computation.set('resultType', 'number')
+                cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                cmp_computation_script.text = "1"
 
             # repeats in Hotdocs are controlled by Dialog variables so we only need this info for stats
             variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
