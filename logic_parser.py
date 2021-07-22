@@ -143,7 +143,7 @@ def convert_logic_file( logic_file ):
                 # @note we no longer trim variables names since there is a possibillity that there are trimmed
                 # variable names that have the same name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
+                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                 else:
                     if (query_type == "Date-DDMonthYYYY-AllowBlank") or (query_type == "Date-DDMMYYYY-AllowBlank"):
@@ -250,7 +250,7 @@ def convert_logic_file( logic_file ):
                     variable_name = variable_name.replace('.', '')
                     # @note Hotdocs has maximum lenght of 100 for variable name
                     if len(variable_name) > 99:
-                        error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
+                        error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                     else:
                         cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                         cmp_sp.set('name', variable_name)
@@ -272,7 +272,7 @@ def convert_logic_file( logic_file ):
                 variable_name = variable_name.replace('.', '_')
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
+                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                 else:
                     if query_type == 'integer':
                         if query_id == 'Query_134':
@@ -402,8 +402,8 @@ def convert_logic_file( logic_file ):
                             variable_name = variable_name.replace('.', '_')
 
                             variable_value = operator.get('Value')
-                            variable_value = variable_value.replace(' ', '')
                             if variable_value is not None:
+                                variable_value = variable_value.replace(' ', '')
                                 condition_expr = variable_name +" = \""+ variable_value+"\""
                                 derived_variable_name = variable_name + "_" + variable_value
                             else:
@@ -522,7 +522,7 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_id + "\n"
+                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                 else:
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
