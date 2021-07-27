@@ -159,6 +159,9 @@ def convert_logic_file( logic_file ):
                         cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
                         cmp_utq_field_width.set('widthType', 'exact')
                         cmp_utq_field_width.set('exactWidth', columns)
+
+                        variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
                     elif (query_type == "integer") or (query_type == "positiveInteger") or \
                          (query_type == "nonNegativeInteger") or (query_type == "Number-3d-3d-3d.00-AllowBlank") or \
                          (query_type == "NonNegativeIntegerOrNothing") or (query_type == "decimal") or \
@@ -178,6 +181,9 @@ def convert_logic_file( logic_file ):
                         cmp_utq_field_width = ET.SubElement(cmp_utq, '{'+namespace+'}fieldWidth')
                         cmp_utq_field_width.set('widthType', 'exact')
                         cmp_utq_field_width.set('exactWidth', columns)
+
+                        variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
                     elif (query_type == "string") or (query_type == "NonEmptyString"):
                         # string datatypes
                         cmp_utq = ET.SubElement(cmp_components, '{'+namespace+'}text')
@@ -192,6 +198,9 @@ def convert_logic_file( logic_file ):
                         if int(rows) > 1:
                             cmp_utq_multi_line = ET.SubElement(cmp_utq, '{'+namespace+'}multiLine')
                             cmp_utq_multi_line.set('height', rows)
+
+                        variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
                     else:
                         # @note repeats are also UTQs with NonNegativeIntegerOrNothing datatype
                         variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
@@ -205,64 +214,63 @@ def convert_logic_file( logic_file ):
 
                     variables["Data"][topic][query_id] = {"Name":query_name, "Priority":priority}
 
-                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
-
             elif variable_type == "SmartPhrase":
-                # can only process well-formed simple smartphrases
-                smartphrase_conditions = []
-                for sub_elem in data.iter():
-                    if sub_elem.tag == "SmartPhrase":
-                        # do not process the root elem
-                        pass
-                    elif sub_elem.tag == "ConditionalPhrase":
-                        smartphrase_conditions.append(sub_elem)
-                    else:
-                        # InsertVariable elems in Exari does not have any equivalent structure
-                        # in Hotdocs so we disregard the SmartPhrase
-                        error_msg = error_msg + "Unsupported SmartPhrase structure at " + query_id + "\n"
-                        smartphrase_conditions = []
-                        break
-
-                if len(smartphrase_conditions) > 0:
-                    ctr = 1
-                    script_string = ""
-                    while len(smartphrase_conditions) > 0:
-                        smartphrase_condition = smartphrase_conditions.pop()
-                        if isinstance(smartphrase_condition, ET.Element):
-                            # replace period on conditions
-                            variable = smartphrase_condition.get('Condition').replace('.', '_')
-                            if ctr == 1:
-                                script_string = "IF " + variable
-                            else:
-                                script_string = script_string + "ELSE IF " + variable
-
-                            if smartphrase_condition.text is not None:
-                                script_string = script_string + " RESULT " + "\"" + smartphrase_condition.text.strip() + "\"\n"
-                            else:
-                                script_string = script_string + "\n"
-                        else:
-                            variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                            error_msg = error_msg + "Unexpected element on SmartPhrase at " + query_id + "\n"
-
-                        ctr = ctr + 1
-
                     variable_name = query_name
                     variable_name = variable_name.replace('.', '')
                     # @note Hotdocs has maximum lenght of 100 for variable name
                     if len(variable_name) > 99:
                         error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                     else:
-                        cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
-                        cmp_sp.set('name', variable_name)
-                        cmp_sp.set('resultType', 'text')
-                        cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
+                        # can only process well-formed simple smartphrases
+                        smartphrase_conditions = []
+                        for sub_elem in data.iter():
+                            if sub_elem.tag == "SmartPhrase":
+                                # do not process the root elem
+                                pass
+                            elif sub_elem.tag == "ConditionalPhrase":
+                                smartphrase_conditions.append(sub_elem)
+                            else:
+                                # InsertVariable elems in Exari does not have any equivalent structure
+                                # in Hotdocs so we disregard the SmartPhrase
+                                smartphrase_conditions = []
+                                break
 
-                        script_string = script_string + "END IF"
-                        cmp_sp_script.text = script_string
-                else:
-                    variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                        if len(smartphrase_conditions) > 0:
+                            ctr = 1
+                            script_string = ""
+                            while len(smartphrase_conditions) > 0:
+                                smartphrase_condition = smartphrase_conditions.pop()
+                                if isinstance(smartphrase_condition, ET.Element):
+                                    # replace period on conditions
+                                    variable = smartphrase_condition.get('Condition').replace('.', '_')
+                                    if ctr == 1:
+                                        script_string = "IF " + variable
+                                    else:
+                                        script_string = script_string + "ELSE IF " + variable
 
-                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                    if smartphrase_condition.text is not None:
+                                        script_string = script_string + " RESULT " + "\"" + smartphrase_condition.text.strip() + "\"\n"
+                                    else:
+                                        script_string = script_string + "\n"
+                                else:
+                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                    error_msg = error_msg + "Unexpected element on SmartPhrase at " + query_id + "\n"
+
+                                ctr = ctr + 1
+
+                            cmp_sp = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                            cmp_sp.set('name', variable_name)
+                            cmp_sp.set('resultType', 'text')
+                            cmp_sp_script = ET.SubElement(cmp_sp, '{'+namespace+'}script')
+
+                            script_string = script_string + "END IF"
+                            cmp_sp_script.text = script_string
+
+                            variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                        else:
+                            error_msg = error_msg + "Unsupported SmartPhrase structure at " + query_id + "\n"
+                            variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
             elif variable_type == "Calculation":
                 # @note calculation in HotDocs does not use JS
@@ -273,10 +281,9 @@ def convert_logic_file( logic_file ):
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
                     error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                 else:
                     if query_type == 'integer':
-                        if query_id == 'Query_134':
-                            print('gotcha')
                         variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                         error_msg = error_msg + "Unsupported Calculation with return type integer at " + query_id + "\n"
 
@@ -297,6 +304,8 @@ def convert_logic_file( logic_file ):
                             # we expect only 1 parameter is declared
                             parameter = data.find("Parameters/Parameter").get('ref')
                             cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
+
+                            variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
                         else:
                             # add support to TRIM calculations on UTQ variables
                             if query_name.lower().find("trim") != -1:
@@ -308,14 +317,15 @@ def convert_logic_file( logic_file ):
                                 # we expect only 1 parameter is declared
                                 parameter = data.find("Parameters/Parameter").get('ref')
                                 cmp_computation_script.text = "TRIM(" + parameter + ")"
+
+                                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
                             else:
+                                # create dummy variable
                                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                                 cmp_computation.set('name', variable_name)
                                 cmp_computation.set('resultType', 'text')
                                 cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
 
-                                # we expect only 1 parameter is declared
-                                parameter = data.find("Parameters/Parameter").get('ref')
                                 cmp_computation_script.text = variable_name
 
                                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
@@ -323,8 +333,6 @@ def convert_logic_file( logic_file ):
                     else:
                         variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
                         error_msg = error_msg + "Unsupported Calculation return type at " + query_id + "\n"
-
-                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
             elif variable_type == "DynamicMultipleChoiceQuestion":
                 # DMCQ derives source mostly from CALC
@@ -336,8 +344,6 @@ def convert_logic_file( logic_file ):
                 device = data.get("Device") or ""
                 multiple_select_toggle = data.get("MultipleSelectToggle") or ""
 
-                # @todo create a POC to recreate similar structure
-                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
             else:
@@ -354,10 +360,6 @@ def convert_logic_file( logic_file ):
             variable_type = data.tag
 
             if variable_type == "Calculation":
-                # we track this for statistics only, ignore processing this type of variable since we do not know
-                # how the script was exactly formulated
-                variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-
                 variable_name = query_name
                 variable_name = variable_name.replace('.', '_')
                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
@@ -365,168 +367,174 @@ def convert_logic_file( logic_file ):
                 cmp_computation.set('resultType', 'trueFalse')
                 cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
 
-                # we expect only 1 parameter is declared
-                param_ref = data.find("Parameters/Parameter").get('ref')
-                param_name = data.find("Parameters/Parameter").get('name')
-                param_script = data.find("script").text
+                script_data = ""
+                if data.find("Parameters/Parameter") is not None:
+                    param_ref = data.find("Parameters/Parameter").get('ref')
+                    param_name = data.find("Parameters/Parameter").get('name')
 
+                param_script = data.find("script").text
                 script_data = param_script.replace(param_name, param_ref)
+
                 cmp_computation_script.text = script_data
 
+                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
             elif variable_type == "ConditionExpression":
-                # deal with multiple conditions, negation condition, or simple variable value test
-                stack1 = []
-                stack2 = []
-
-                # depth first elem parsing
-                for sub_elem in data.iter():
-                    if sub_elem.tag == "ConditionExpression":
-                        # do not add the root elem
-                        pass
-                    elif (sub_elem.tag == "Test") or (sub_elem.tag == "UseCondition"):
-                        stack1.append(sub_elem)
-                    else:
-                        # track condition operators on different stack
-                        stack1.append(sub_elem.tag)
-
-                # create infix notation using postfix stack structure
-                condition_expr = ""
-                derived_variable_name = ""
-                if len(stack1) == 1:
-                    # stack 1 contains simple condition ie. generated from MCQ
-                    operator = stack1.pop()
-                    if isinstance(operator, ET.Element):
-                        # for Test elems, strip periods on variable name
-                        if operator.tag == 'Test':
-                            variable_name = operator.get('IDREF')
-                            variable_name = variable_name.replace('.', '_')
-
-                            variable_value = operator.get('Value')
-                            if variable_value is not None:
-                                variable_value = variable_value.replace(' ', '')
-                                condition_expr = variable_name +" = \""+ variable_value+"\""
-                                derived_variable_name = variable_name + "_" + variable_value
-                            else:
-                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                error_msg = error_msg + "Value required at condition " + query_id + "\n"
-                        elif operator.tag == 'UseCondition':
-                            # this is probably derived condition
-                            variable_name = operator.get('IDREF')
-                            variable_name = variable_name.replace('.', '_')
-                            condition_expr = "IF "+variable_name+" RESULT TRUE END IF"
-                        else:
-                            variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                            error_msg = error_msg + "Unsupported ConditionExpression at " + query_id + "\n"
-
-                        stack2.append(condition_expr)
-                else:
-                    while len(stack1) > 0:
-                        # stack 1 contains compound condition
-                        operator = stack1.pop()
-                        if isinstance(operator, ET.Element):
-                            # put Test and UseCondition elems on the temp stack
-                            stack2.append(operator)
-                        else:
-                            if operator == "Not":
-                                # handling negation operation
-                                if len(stack2) > 0:
-                                    operand1 = stack2.pop()
-                                    # stack 2 contains elems as operands or assembled conditions
-                                    if isinstance(operand1, ET.Element):
-                                        if operand1.tag == "UseCondition":
-                                            condition_expr = operand1.get('IDREF')
-                                            # period in condition expression variable name may come from
-                                            # autogenerated MCQ options or user provided variable names
-                                            condition_expr = condition_expr.replace('.', '_')
-                                            condition_expr = condition_expr.replace('-', '_')
-                                        elif operand1.tag == "Test":
-
-                                            # for Test elems, strip periods on variable name
-                                            variable_name = operand1.get('IDREF')
-                                            variable_name = variable_name.replace('.', '_')
-                                            variable_value = operand1.get('Value')
-
-                                            if variable_value is not None:
-                                                condition_expr = "("+variable_name+" = \""+variable_value+"\")"
-                                            else:
-                                                condition_expr = "("+variable_name+" = \"\")"
-                                        else:
-                                            variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                            error_msg = error_msg + "Unexpected element while processing ConditionExpression at " + query_id + "\n"
-                                    else:
-                                        # temp stack contains assembled conditions
-                                        condition_expr = operand1
-
-                                    condition_expr = "(NOT " + condition_expr + ")"
-
-                                    if query_name.lower().find('known.yes') > 0:
-                                        if query_type == 'string':
-                                            condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
-                                        else:
-                                            condition_expr = "ANSWERED("+ variable_name +")"
-
-                                    stack2.append(condition_expr)
-                                else:
-                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                    error_msg = error_msg + "Missing operand for NOT condition on " + query_id + "\n"
-                            else:
-                                # we are now handling compound conditions
-                                # only UseCondition elems should only be processed here
-                                if len(stack2) > 1:
-                                    operand1 = stack2.pop()
-                                    operand2 = stack2.pop()
-
-                                    # conditions expressions generated from MCQ needs to be renamed
-                                    if isinstance(operand1, ET.Element):
-                                        if operand1.tag == "UseCondition":
-                                            operand1 = operand1.get('IDREF')
-                                            operand1 = operand1.replace('.', '_')
-                                            operand1 = operand1.replace('-', '_')
-                                        elif operand1.tag == "Test":
-                                            # for Test elems, strip periods on variable name
-                                            variable_name = operand1.get('IDREF').replace('.', '_')
-                                            variable_value = operand1.get('Value')
-                                            if variable_value is not None:
-                                                operand1 = "("+variable_name+" = \""+variable_value+"\")"
-                                            else:
-                                                # some Test elems contains UTQs
-                                                operand1 = variable_name
-
-                                    if isinstance(operand2, ET.Element):
-                                        if operand2.tag == "UseCondition":
-                                            operand2 = operand2.get('IDREF')
-                                            operand2 = operand2.replace('.', '_')
-                                            operand2 = operand2.replace('-', '_')
-                                        elif operand2.tag == "Test":
-                                            # for Test elems, strip periods on variable name
-                                            variable_name = operand2.get('IDREF').replace('.', '_')
-                                            variable_value = operand2.get('Value')
-                                            if variable_value is not None:
-                                                operand2 = "("+variable_name+" = \""+variable_value+"\")"
-                                            else:
-                                                # some Test elems contains UTQs reference
-                                                operand2 = variable_name
-
-                                    condition_expr = "(" + operand1 + " " + operator.upper() + " " + operand2 + ")"
-                                    stack2.append(condition_expr)
-                                else:
-                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                    error_msg = error_msg + "Incomplete operands for " + operator +" on " + query_id + "\n"
-
                 # @action should be the same with Exari to Hotdocs templater
                 variable_name = query_name.replace('.', '_')
                 variable_name = variable_name.replace('-', '_')
 
-                if derived_variable_name != "":
-                    variable_name = derived_variable_name
-
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
                     error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                 else:
+                    # deal with multiple conditions, negation condition, or simple variable value test
+                    stack1 = []
+                    stack2 = []
+
+                    # depth first elem parsing
+                    for sub_elem in data.iter():
+                        if sub_elem.tag == "ConditionExpression":
+                            # do not add the root elem
+                            pass
+                        elif (sub_elem.tag == "Test") or (sub_elem.tag == "UseCondition"):
+                            stack1.append(sub_elem)
+                        else:
+                            # track condition operators on different stack
+                            stack1.append(sub_elem.tag)
+
+                    # create infix notation using postfix stack structure
+                    condition_expr = ""
+                    derived_variable_name = ""
+                    if len(stack1) == 1:
+                        # stack 1 contains simple condition ie. generated from MCQ
+                        operator = stack1.pop()
+                        if isinstance(operator, ET.Element):
+                            # for Test elems, strip periods on variable name
+                            if operator.tag == 'Test':
+                                variable_name = operator.get('IDREF')
+                                variable_name = variable_name.replace('.', '_')
+
+                                variable_value = operator.get('Value')
+                                if variable_value is not None:
+                                    variable_value = variable_value.replace(' ', '')
+                                    condition_expr = variable_name +" = \""+ variable_value+"\""
+                                    derived_variable_name = variable_name + "_" + variable_value
+                                else:
+                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                    error_msg = error_msg + "Value required at condition " + query_id + "\n"
+                            elif operator.tag == 'UseCondition':
+                                # this is probably derived condition
+                                variable_name = operator.get('IDREF')
+                                variable_name = variable_name.replace('.', '_')
+                                condition_expr = "IF "+variable_name+" RESULT TRUE END IF"
+                            else:
+                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                error_msg = error_msg + "Unsupported ConditionExpression at " + query_id + "\n"
+
+                            stack2.append(condition_expr)
+                    else:
+                        while len(stack1) > 0:
+                            # stack 1 contains compound condition
+                            operator = stack1.pop()
+                            if isinstance(operator, ET.Element):
+                                # put Test and UseCondition elems on the temp stack
+                                stack2.append(operator)
+                            else:
+                                if operator == "Not":
+                                    # handling negation operation
+                                    if len(stack2) > 0:
+                                        operand1 = stack2.pop()
+                                        # stack 2 contains elems as operands or assembled conditions
+                                        if isinstance(operand1, ET.Element):
+                                            if operand1.tag == "UseCondition":
+                                                condition_expr = operand1.get('IDREF')
+                                                # period in condition expression variable name may come from
+                                                # autogenerated MCQ options or user provided variable names
+                                                condition_expr = condition_expr.replace('.', '_')
+                                                condition_expr = condition_expr.replace('-', '_')
+                                            elif operand1.tag == "Test":
+
+                                                # for Test elems, strip periods on variable name
+                                                variable_name = operand1.get('IDREF')
+                                                variable_name = variable_name.replace('.', '_')
+                                                variable_value = operand1.get('Value')
+
+                                                if variable_value is not None:
+                                                    condition_expr = "("+variable_name+" = \""+variable_value+"\")"
+                                                else:
+                                                    condition_expr = "("+variable_name+" = \"\")"
+                                            else:
+                                                variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                                error_msg = error_msg + "Unexpected element while processing ConditionExpression at " + query_id + "\n"
+                                        else:
+                                            # temp stack contains assembled conditions
+                                            condition_expr = operand1
+
+                                        condition_expr = "(NOT " + condition_expr + ")"
+
+                                        if query_name.lower().find('known.yes') > 0:
+                                            if query_type == 'string':
+                                                condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
+                                            else:
+                                                condition_expr = "ANSWERED("+ variable_name +")"
+
+                                        stack2.append(condition_expr)
+                                    else:
+                                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                        error_msg = error_msg + "Missing operand for NOT condition on " + query_id + "\n"
+                                else:
+                                    # we are now handling compound conditions
+                                    # only UseCondition elems should only be processed here
+                                    if len(stack2) > 1:
+                                        operand1 = stack2.pop()
+                                        operand2 = stack2.pop()
+
+                                        # conditions expressions generated from MCQ needs to be renamed
+                                        if isinstance(operand1, ET.Element):
+                                            if operand1.tag == "UseCondition":
+                                                operand1 = operand1.get('IDREF')
+                                                operand1 = operand1.replace('.', '_')
+                                                operand1 = operand1.replace('-', '_')
+                                            elif operand1.tag == "Test":
+                                                # for Test elems, strip periods on variable name
+                                                variable_name = operand1.get('IDREF').replace('.', '_')
+                                                variable_value = operand1.get('Value')
+                                                if variable_value is not None:
+                                                    operand1 = "("+variable_name+" = \""+variable_value+"\")"
+                                                else:
+                                                    # some Test elems contains UTQs
+                                                    operand1 = variable_name
+
+                                        if isinstance(operand2, ET.Element):
+                                            if operand2.tag == "UseCondition":
+                                                operand2 = operand2.get('IDREF')
+                                                operand2 = operand2.replace('.', '_')
+                                                operand2 = operand2.replace('-', '_')
+                                            elif operand2.tag == "Test":
+                                                # for Test elems, strip periods on variable name
+                                                variable_name = operand2.get('IDREF').replace('.', '_')
+                                                variable_value = operand2.get('Value')
+                                                if variable_value is not None:
+                                                    operand2 = "("+variable_name+" = \""+variable_value+"\")"
+                                                else:
+                                                    # some Test elems contains UTQs reference
+                                                    operand2 = variable_name
+
+                                        condition_expr = "(" + operand1 + " " + operator.upper() + " " + operand2 + ")"
+                                        stack2.append(condition_expr)
+                                    else:
+                                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                        error_msg = error_msg + "Incomplete operands for " + operator +" on " + query_id + "\n"
+
+                    if derived_variable_name != "":
+                        variable_name = derived_variable_name
+
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
                         error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
+                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                     else:
                         cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                         cmp_computation.set('name', variable_name)
@@ -540,7 +548,7 @@ def convert_logic_file( logic_file ):
                         # add the variable name into search string
                         cond_search_str[variable_name] = variable_name
 
-                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                        variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
         elif logic_variable.tag == "Repeat":
             # repeats in Hotdocs are just bundled variables in a Dialog variable and returns a List Record
@@ -605,7 +613,6 @@ def convert_logic_file( logic_file ):
                 cmp_computation_script.text = "1"
 
             # repeats in Hotdocs are controlled by Dialog variables so we only need this info for stats
-            variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
             variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
 
     # group together relevant variables
