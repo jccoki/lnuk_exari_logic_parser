@@ -415,11 +415,13 @@ def convert_logic_file( logic_file ):
                             if operator.tag == 'Test':
                                 variable_name = operator.get('IDREF')
                                 variable_name = variable_name.replace('.', '_')
+                                variable_name = variable_name.replace(' ', '')
 
                                 variable_value = operator.get('Value')
                                 if variable_value is not None:
-                                    variable_value = variable_value.replace(' ', '')
                                     condition_expr = variable_name +" = \""+ variable_value+"\""
+
+                                    variable_value = variable_value.replace(' ', '')
                                     derived_variable_name = variable_name + "_" + variable_value
                                 else:
                                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
