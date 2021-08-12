@@ -34,6 +34,8 @@ def convert_logic_file( logic_file ):
     variables["SmartPhrase"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["Repeat"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["IncrementingRepeat"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["IncrementingRepeat"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
+    variables["Constant"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["Data"] = {}
 
     cmp_components = ET.SubElement(cmp_root, '{'+namespace+'}components')
@@ -113,8 +115,10 @@ def convert_logic_file( logic_file ):
                         prompt = response.find("Prompt/p").text
                     else:
                         prompt = response.find("Prompt").text
-
-                    value = response.find("SetValueTo").text
+                    if response.find("SetValueTo") is not None:
+                        value = response.find("SetValueTo").text
+                    else:
+                        value = ""
                     cmp_mcq_option_table_fields['Rows'].append([value,prompt])
                 
                 # HotDocs requires a newline char after the QUIT keywork on option table
@@ -235,7 +239,6 @@ def convert_logic_file( logic_file ):
                                 # in Hotdocs so we disregard the SmartPhrase
                                 smartphrase_conditions = []
                                 break
-
                         if len(smartphrase_conditions) > 0:
                             ctr = 1
                             script_string = ""
@@ -243,16 +246,20 @@ def convert_logic_file( logic_file ):
                                 smartphrase_condition = smartphrase_conditions.pop()
                                 if isinstance(smartphrase_condition, ET.Element):
                                     # replace period on conditions
-                                    variable = smartphrase_condition.get('Condition').replace('.', '_')
-                                    if ctr == 1:
-                                        script_string = "IF " + variable
-                                    else:
-                                        script_string = script_string + "ELSE IF " + variable
+                                    if smartphrase_condition.get('Condition') is not None:
+                                        variable = smartphrase_condition.get('Condition').replace('.', '_')
+                                        if ctr == 1:
+                                            script_string = "IF " + variable
+                                        else:
+                                            script_string = script_string + "ELSE IF " + variable
 
-                                    if smartphrase_condition.text is not None:
-                                        script_string = script_string + " RESULT " + "\"" + smartphrase_condition.text.strip() + "\"\n"
+                                        if smartphrase_condition.text is not None:
+                                            script_string = script_string + " RESULT " + "\"" + smartphrase_condition.text.strip() + "\"\n"
+                                        else:
+                                            script_string = script_string + "\n"
                                     else:
-                                        script_string = script_string + "\n"
+                                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                        error_msg = error_msg + "Invalid SmartPhrase declaration at " + query_id + "\n"
                                 else:
                                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                     error_msg = error_msg + "Unexpected element on SmartPhrase at " + query_id + "\n"
@@ -423,6 +430,11 @@ def convert_logic_file( logic_file ):
 
                                     variable_value = variable_value.replace(' ', '')
                                     derived_variable_name = variable_name + "_" + variable_value
+
+                                    if len(derived_variable_name) > 100:
+                                        derived_variable_name = query_name
+                                        derived_variable_name = derived_variable_name.replace('.', '_')
+                                        derived_variable_name = derived_variable_name.replace('-', '_')
                                 else:
                                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                     error_msg = error_msg + "Value required at condition " + query_id + "\n"
@@ -463,6 +475,9 @@ def convert_logic_file( logic_file ):
                                                 variable_name = variable_name.replace('.', '_')
                                                 variable_value = operand1.get('Value')
 
+                                                derived_variable_name = query_name
+                                                derived_variable_name = query_name.replace('.', '_')
+
                                                 if variable_value is not None:
                                                     condition_expr = "("+variable_name+" = \""+variable_value+"\")"
                                                 else:
@@ -493,6 +508,8 @@ def convert_logic_file( logic_file ):
                                         operand1 = stack2.pop()
                                         operand2 = stack2.pop()
 
+                                        operand_name = ""
+                                        operand_value = ""
                                         # conditions expressions generated from MCQ needs to be renamed
                                         if isinstance(operand1, ET.Element):
                                             if operand1.tag == "UseCondition":
@@ -501,13 +518,13 @@ def convert_logic_file( logic_file ):
                                                 operand1 = operand1.replace('-', '_')
                                             elif operand1.tag == "Test":
                                                 # for Test elems, strip periods on variable name
-                                                variable_name = operand1.get('IDREF').replace('.', '_')
-                                                variable_value = operand1.get('Value')
-                                                if variable_value is not None:
-                                                    operand1 = "("+variable_name+" = \""+variable_value+"\")"
+                                                operand_name = operand1.get('IDREF').replace('.', '_')
+                                                operand_value = operand1.get('Value')
+                                                if operand_value is not None:
+                                                    operand1 = "("+operand_name+" = \""+operand_value+"\")"
                                                 else:
                                                     # some Test elems contains UTQs
-                                                    operand1 = variable_name
+                                                    operand1 = operand_name
 
                                         if isinstance(operand2, ET.Element):
                                             if operand2.tag == "UseCondition":
@@ -516,16 +533,20 @@ def convert_logic_file( logic_file ):
                                                 operand2 = operand2.replace('-', '_')
                                             elif operand2.tag == "Test":
                                                 # for Test elems, strip periods on variable name
-                                                variable_name = operand2.get('IDREF').replace('.', '_')
-                                                variable_value = operand2.get('Value')
-                                                if variable_value is not None:
-                                                    operand2 = "("+variable_name+" = \""+variable_value+"\")"
+                                                operand_name = operand2.get('IDREF').replace('.', '_')
+                                                operand_value = operand2.get('Value')
+                                                if operand_value is not None:
+                                                    operand2 = "("+operand_name+" = \""+operand_value+"\")"
                                                 else:
                                                     # some Test elems contains UTQs reference
-                                                    operand2 = variable_name
+                                                    operand2 = operand_name
 
                                         condition_expr = "(" + operand1 + " " + operator.upper() + " " + operand2 + ")"
                                         stack2.append(condition_expr)
+
+                                        variable_name = query_name
+                                        variable_name = variable_name.replace('.', '_')
+                                        variable_name = variable_name.replace('-', '_')
                                     else:
                                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                         error_msg = error_msg + "Incomplete operands for " + operator +" on " + query_id + "\n"
