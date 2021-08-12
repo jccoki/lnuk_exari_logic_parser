@@ -478,10 +478,17 @@ def convert_logic_file( logic_file ):
                                                 derived_variable_name = query_name
                                                 derived_variable_name = query_name.replace('.', '_')
 
-                                                if variable_value is not None:
-                                                    condition_expr = "("+variable_name+" = \""+variable_value+"\")"
+                                                cond_var_data_type = lgc_root.findall("./LogicSetup/Variables/Variable[@name='" + variable_name + "']")
+                                                if cond_var_data_type == "string" or cond_var_data_type == "NonEmptyString":
+                                                    if variable_value is not None:
+                                                        condition_expr = "("+variable_name+" = \""+variable_value+"\")"
+                                                    else:
+                                                        condition_expr = "("+variable_name+" = \"\")"
+
+                                                    condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
                                                 else:
-                                                    condition_expr = "("+variable_name+" = \"\")"
+                                                    condition_expr = "ANSWERED("+ variable_name +")"
+
                                             else:
                                                 variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                                                 error_msg = error_msg + "Unexpected element while processing ConditionExpression at " + query_id + "\n"
@@ -490,12 +497,6 @@ def convert_logic_file( logic_file ):
                                             condition_expr = operand1
 
                                         condition_expr = "(NOT " + condition_expr + ")"
-
-                                        if query_name.lower().find('known.yes') > 0:
-                                            if query_type == 'string':
-                                                condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
-                                            else:
-                                                condition_expr = "ANSWERED("+ variable_name +")"
 
                                         stack2.append(condition_expr)
                                     else:
