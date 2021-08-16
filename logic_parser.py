@@ -322,10 +322,17 @@ def convert_logic_file( logic_file ):
                                 cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
 
                                 # we expect only 1 parameter is declared
-                                parameter = data.find("Parameters/Parameter").get('ref')
-                                cmp_computation_script.text = "TRIM(" + parameter + ")"
+                                if data.find("Parameters/Parameter") is not None:
+                                    parameter = data.find("Parameters/Parameter").get('ref')
+                                    cmp_computation_script.text = "TRIM(" + parameter + ")"
 
-                                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                    variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                else:
+                                    # we add dummy text
+                                    cmp_computation_script.text = variable_name
+
+                                    error_msg = error_msg + "Missing parameter for TRIM operation on " + query_name + "\n"
+                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                             else:
                                 # create dummy variable
                                 cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
