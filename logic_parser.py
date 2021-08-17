@@ -696,11 +696,22 @@ def convert_logic_file( logic_file ):
         int(variables["DynamicMultipleChoiceQuestion"]["stats"]["error"]) + int(variables["ConditionExpression"]["stats"]["error"]) + \
         int(variables["SmartPhrase"]["stats"]["error"]) + int(variables["Repeat"]["stats"]["error"])
 
-    json_file_name = str(Path(logic_file).stem + '.json').lower()
+    output_directory = Path(Path.cwd(), "output")
+    json_directory = Path(Path.cwd(), "json")
+    report_directory = Path(Path.cwd(), "report")
+    if not json_directory.exists():
+        # create the directory but raise alarms if it does not exist
+        json_directory.mkdir(parents=False, exist_ok=False)
+
+    if not report_directory.exists():
+        # create the directory but raise alarms if it does not exist
+        report_directory.mkdir(parents=False, exist_ok=False)
+
+    json_file_name = Path(json_directory, str(Path(logic_file).stem + '.json').lower())
     with open(json_file_name, 'w') as f:
         json.dump(variables, f, indent=4)
 
-    report_file_name = str(Path(logic_file).stem + '.txt').lower()
+    report_file_name = Path(report_directory, str(Path(logic_file).stem + '.txt').lower())
     report_file = open(report_file_name,"w")
     report_file.write(error_msg)
     report_file.close()
