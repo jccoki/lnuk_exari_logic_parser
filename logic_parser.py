@@ -329,10 +329,17 @@ def convert_logic_file( logic_file ):
                                 cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
 
                                 # we expect only 1 parameter is declared
-                                parameter = data.find("Parameters/Parameter").get('ref')
-                                cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
+                                if data.find("Parameters/Parameter") is not None:
+                                    parameter = data.find("Parameters/Parameter").get('ref')
+                                    cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
 
-                                variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                    variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                else:
+                                    # we add dummy text
+                                    cmp_computation_script.text = variable_name
+
+                                    error_msg = error_msg + "Missing parameter for TRIM operation on " + query_name + "\n"
+                                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                             else:
                                 # add support to TRIM calculations on UTQ variables
                                 if query_name.lower().find("trim") != -1:
@@ -382,6 +389,38 @@ def convert_logic_file( logic_file ):
                 multiple_select_toggle = data.get("MultipleSelectToggle") or ""
 
                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+
+            elif variable_type == "Constant":
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+
+                # @note Hotdocs has maximum lenght of 100 for variable name
+                if len(variable_name) > 99:
+                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                else:
+                    # check if there is already a variable with the same name
+                    if variable_name in cond_search_str:
+                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
+                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                    else:
+                        if query_type == 'integer':
+                            cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                            cmp_computation.set('name', variable_name)
+                            cmp_computation.set('resultType', 'number')
+                            cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                            cmp_computation_script.text = data.get("value")
+                        elif query_type == 'string':
+                            cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                            cmp_computation.set('name', variable_name)
+                            cmp_computation.set('resultType', 'text')
+                            cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+                            cmp_computation_script.text = data.get("value")
+
+                        variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
+                        # add the variable name into search string
+                        cond_search_str[variable_name] = variable_name
 
             else:
                 variables["Stats"]["unknown"] = int(variables["Stats"]["unknown"]) + 1
@@ -516,7 +555,6 @@ def convert_logic_file( logic_file ):
                                                 condition_expr = condition_expr.replace('.', '_')
                                                 condition_expr = condition_expr.replace('-', '_')
                                             elif operand1.tag == "Test":
-
                                                 # for Test elems, strip periods on variable name
                                                 variable_name = operand1.get('IDREF')
                                                 variable_name = variable_name.replace('.', '_')
@@ -525,14 +563,19 @@ def convert_logic_file( logic_file ):
                                                 derived_variable_name = query_name
                                                 derived_variable_name = query_name.replace('.', '_')
 
-                                                cond_var_data_type = lgc_root.findall("./LogicSetup/Variables/Variable[@name='" + variable_name + "']")
+                                                check_variable_type = lgc_root.find("./LogicSetup/Variables/Variable[@name='" + variable_name + "']")
+                                                if check_variable_type is not None:
+                                                    cond_var_data_type = check_variable_type.get("type")
+                                                else:
+                                                    cond_var_data_type = ""
+
                                                 if cond_var_data_type == "string" or cond_var_data_type == "NonEmptyString":
                                                     if variable_value is not None:
                                                         condition_expr = "("+variable_name+" = \""+variable_value+"\")"
                                                     else:
                                                         condition_expr = "("+variable_name+" = \"\")"
 
-                                                    condition_expr = "ANSWERED("+ variable_name +") AND " + condition_expr
+                                                    condition_expr = "(" + condition_expr + ")"
                                                 else:
                                                     condition_expr = "ANSWERED("+ variable_name +")"
 
@@ -620,6 +663,35 @@ def convert_logic_file( logic_file ):
                         cond_search_str[variable_name] = variable_name
 
                         variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
+            elif variable_type == "Constant":
+                variable_name = query_name
+                variable_name = variable_name.replace('.', '_')
+
+                # @note Hotdocs has maximum lenght of 100 for variable name
+                if len(variable_name) > 99:
+                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                    variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                else:
+                    # check if there is already a variable with the same name
+                    if variable_name in cond_search_str:
+                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
+                        variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                    else:
+                        cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
+                        cmp_computation.set('name', variable_name)
+                        cmp_computation.set('resultType', 'trueFalse')
+                        cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
+
+                        if str(data.get("value")).lower() == "false":
+                            cmp_computation_script.text = "RESULT FALSE"
+                        elif str(data.get("value")).lower() == "true":
+                            cmp_computation_script.text = "RESULT TRUE"
+
+                        variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+
+                        # add the variable name into search string
+                        cond_search_str[variable_name] = variable_name
 
         elif logic_variable.tag == "Repeat":
             # repeats in Hotdocs are just bundled variables in a Dialog variable and returns a List Record
