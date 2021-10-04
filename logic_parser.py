@@ -38,11 +38,13 @@ def convert_logic_file( logic_file ):
     variables["Constant"] = {"stats": {"total": 0, "ignored":0, "error": 0}}
     variables["Data"] = {}
 
+    variable_replacement_list = "Exari variable name, Hotdocs converted variable name\n"
+
     cmp_components = ET.SubElement(cmp_root, '{'+namespace+'}components')
 
     # fetch all logic variable elems
     logic_variables = lgc_root.findall("./LogicSetup/Variables/")
-    error_msg = ""
+    error_msg = "Variable name, Error message\n"
     cond_search_str = {}
     topic_list = {}
 
@@ -138,6 +140,11 @@ def convert_logic_file( logic_file ):
                 variables["Data"][topic.lower()][query_id] = {"Name":query_name, "Priority":priority}
                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
+                if (cardinality == 'MultipleOrNone') or (cardinality == 'Multiple'):
+                    variable_replacement_list = variable_replacement_list + query_name + "," + query_name + "MCM" + "\n"
+                else:
+                    variable_replacement_list = variable_replacement_list + query_name + "," + query_name + "MCS" + "\n"
+
             elif variable_type == "UserTextQuestion":
                 rows = data.get("Rows") or "1"
                 columns = "40"
@@ -151,13 +158,13 @@ def convert_logic_file( logic_file ):
                 # @note we no longer trim variables names since there is a possibillity that there are trimmed
                 # variable names that have the same name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                    error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                 else:
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
-                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                        error_msg = error_msg + query_name + ",[" + query_id + "]Variable already exists\n"
                     else:
                         if (query_type == "Date-DDMonthYYYY-AllowBlank") or (query_type == "Date-DDMMYYYY-AllowBlank"):
                             # date datatypes
@@ -174,6 +181,7 @@ def convert_logic_file( logic_file ):
                             cmp_utq_field_width.set('exactWidth', columns)
 
                             variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "DA" + "\n"
 
                         elif (query_type == "integer") or (query_type == "positiveInteger") or \
                             (query_type == "nonNegativeInteger") or (query_type == "NonNegativeIntegerOrNothing") or \
@@ -197,6 +205,7 @@ def convert_logic_file( logic_file ):
                             cmp_utq_field_width.set('exactWidth', columns)
 
                             variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "NU" + "\n"
 
                         elif (query_type == "string") or (query_type == "NonEmptyString"):
                             # string datatypes
@@ -214,11 +223,12 @@ def convert_logic_file( logic_file ):
                                 cmp_utq_multi_line.set('height', rows)
 
                             variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "TE" + "\n"
 
                         else:
                             # @note repeats are also UTQs with NonNegativeIntegerOrNothing datatype
                             variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                            error_msg = error_msg + "Unsupported UserTextQuestion datatype at " + query_id + "\n"
+                            error_msg = error_msg + query_name + ",[" + query_id + "]Unsupported UserTextQuestion datatype\n"
 
                         # arrange UTQs based on topic
                         if (data.get("Priority") is None) or (data.get("Priority") == ""):
@@ -237,13 +247,13 @@ def convert_logic_file( logic_file ):
                     variable_name = variable_name.replace('.', '')
                     # @note Hotdocs has maximum lenght of 100 for variable name
                     if len(variable_name) > 99:
-                        error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                        error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                     else:
                         # check if there is already a variable with the same name
                         if variable_name in cond_search_str:
-                            error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                             variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                            error_msg = error_msg + query_name + ",["+ query_id +"]Variable already exists\n"
                         else:
                             # can only process well-formed simple smartphrases
                             smartphrase_conditions = []
@@ -278,10 +288,10 @@ def convert_logic_file( logic_file ):
                                                 script_string = script_string + "\n"
                                         else:
                                             variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                            error_msg = error_msg + "Invalid SmartPhrase declaration at " + query_id + "\n"
+                                            error_msg = error_msg + query_name + ",["+ query_id +"]Invalid SmartPhrase declaration\n"
                                     else:
                                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                        error_msg = error_msg + "Unexpected element on SmartPhrase at " + query_id + "\n"
+                                        error_msg = error_msg + query_name + ",["+ query_id +"]Unexpected element on SmartPhrase\n"
 
                                     ctr = ctr + 1
 
@@ -294,9 +304,10 @@ def convert_logic_file( logic_file ):
                                 cmp_sp_script.text = script_string
 
                                 variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
                             else:
-                                error_msg = error_msg + "Unsupported SmartPhrase structure at " + query_id + "\n"
                                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                                error_msg = error_msg + query_name + ",[" + query_id + "]Unsupported SmartPhrase structure\n"
 
                             # add the variable name into search string
                             cond_search_str[variable_name] = variable_name
@@ -309,17 +320,17 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                 else:
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
-                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                        error_msg = error_msg + query_name + ",["+ query_id +"]Variable already exists\n"
                     else:
                         if query_type == 'integer':
                             variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                            error_msg = error_msg + "Unsupported Calculation with return type integer at " + query_id + "\n"
+                            # error_msg = error_msg + query_name + ",[" + query_id + "]Unsupported Calculation with return type integer\n"
 
                             # create placeholder variable
                             cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
@@ -327,6 +338,8 @@ def convert_logic_file( logic_file ):
                             cmp_computation.set('resultType', 'number')
                             cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
                             cmp_computation_script.text = "1 // Replace with equivalent computation"
+
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
                         elif query_type == 'string':
                             # strip newline chars
                             if query_name.lower().find("removeblanks") != -1:
@@ -341,12 +354,12 @@ def convert_logic_file( logic_file ):
                                     cmp_computation_script.text = "REPLACE(" + parameter + ", \"\\r\", \", \")"
 
                                     variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                                    variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
                                 else:
                                     # we add dummy text
                                     cmp_computation_script.text = variable_name
-
-                                    error_msg = error_msg + "Missing parameter for TRIM operation on " + query_name + "\n"
                                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                    error_msg = error_msg + query_name + ",[" + query_id + "]Missing parameter for TRIM operation on string datatype\n"
                             else:
                                 # add support to TRIM calculations on UTQ variables
                                 if query_name.lower().find("trim") != -1:
@@ -364,9 +377,8 @@ def convert_logic_file( logic_file ):
                                     else:
                                         # we add dummy text
                                         cmp_computation_script.text = variable_name
-
-                                        error_msg = error_msg + "Missing parameter for TRIM operation on " + query_name + "\n"
                                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                                        error_msg = error_msg + query_name + ",[" + query_id + "]Missing parameter for TRIM operation on string datatype\n"
                                 else:
                                     # create dummy variable
                                     cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
@@ -377,10 +389,10 @@ def convert_logic_file( logic_file ):
                                     cmp_computation_script.text = "\"" + variable_name + "\" // Replace with equivalent calculation string"
 
                                     variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                                    error_msg = error_msg + "Unsupported Calculation string manipulation at " + query_id + "\n"
+                                    error_msg = error_msg + query_name + ",[" + query_id + "]Unsupported Calculation string manipulation\n"
                         else:
                             variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
-                            error_msg = error_msg + "Unsupported Calculation return type at " + query_id + "\n"
+                            error_msg = error_msg + query_name + ",[" + query_id + "]Unsupported Calculation return type\n"
 
                         # add the variable name into search string
                         cond_search_str[variable_name] = variable_name
@@ -396,6 +408,7 @@ def convert_logic_file( logic_file ):
                 multiple_select_toggle = data.get("MultipleSelectToggle") or ""
 
                 variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+                error_msg = error_msg + query_name + ",[" + query_id + "]Unable to convert DynamicMultipleChoiceQuestion variable\n"
 
             elif variable_type == "Constant":
                 variable_name = query_name
@@ -403,13 +416,13 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                    error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                 else:
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
-                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                        error_msg = error_msg + query_name + ",["+ query_id +"]Variable already exists\n"
                     else:
                         if query_type == 'integer':
                             cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
@@ -417,12 +430,15 @@ def convert_logic_file( logic_file ):
                             cmp_computation.set('resultType', 'number')
                             cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
                             cmp_computation_script.text = data.get("value")
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
+
                         elif query_type == 'string':
                             cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                             cmp_computation.set('name', variable_name)
                             cmp_computation.set('resultType', 'text')
                             cmp_computation_script = ET.SubElement(cmp_computation, '{'+namespace+'}script')
                             cmp_computation_script.text = data.get("value")
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
 
                         variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
 
@@ -431,7 +447,7 @@ def convert_logic_file( logic_file ):
 
             else:
                 variables["Stats"]["unknown"] = int(variables["Stats"]["unknown"]) + 1
-                error_msg = error_msg + "Unsupported variable at " + query_id + "\n"
+                error_msg = error_msg + query_name + ",["+ query_id +"]Unsupported variable\n"
 
         elif logic_variable.tag == "Condition":
             # Condition in Hotdocs are calculations that have boolean return value
@@ -448,12 +464,12 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                    error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                 else:
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
-                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
+                        error_msg = error_msg + query_name + ",["+ query_id +"]Variable already exists\n"
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                     else:
                         cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
@@ -472,6 +488,7 @@ def convert_logic_file( logic_file ):
                         cmp_computation_script.text = "RESULT TRUE // Replace with equivalent condition"
 
                         variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                        variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
 
                         # add the variable name into search string
                         cond_search_str[variable_name] = variable_name
@@ -483,7 +500,7 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                    error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
                 else:
                     # deal with multiple conditions, negation condition, or simple variable value test
@@ -537,7 +554,7 @@ def convert_logic_file( logic_file ):
                                 variable_name = variable_name.replace('-', '_')
                             else:
                                 variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                error_msg = error_msg + "Unsupported ConditionExpression at " + query_id + "\n"
+                                error_msg = error_msg + query_name + ",["+ query_id +"]Unsupported ConditionExpression\n"
 
                             stack2.append(condition_expr)
                     else:
@@ -589,7 +606,7 @@ def convert_logic_file( logic_file ):
                                                     condition_expr = "ANSWERED("+ variable_name +")"
                                             else:
                                                 variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                                error_msg = error_msg + "Unexpected element while processing ConditionExpression at " + query_id + "\n"
+                                                error_msg = error_msg + query_name + ",["+ query_id +"]Unexpected element while processing ConditionExpression\n"
                                         else:
                                             # temp stack contains assembled conditions
                                             condition_expr = operand1
@@ -598,7 +615,7 @@ def convert_logic_file( logic_file ):
                                         stack2.append(condition_expr)
                                     else:
                                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                        error_msg = error_msg + "Missing operand for NOT condition on " + query_id + "\n"
+                                        error_msg = error_msg + query_name + ",["+ query_id +"]Missing operand for NOT condition\n"
                                 else:
                                     # we are now handling compound conditions
                                     # only UseCondition elems should only be processed here
@@ -647,19 +664,19 @@ def convert_logic_file( logic_file ):
                                         variable_name = variable_name.replace('-', '_')
                                     else:
                                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                                        error_msg = error_msg + "Incomplete operands for " + operator +" on " + query_id + "\n"
+                                        error_msg = error_msg + query_name + ",["+ query_id +"]Incomplete operands for " + operator +"\n"
 
                     if derived_variable_name != "":
                         variable_name = derived_variable_name
 
                     if len(variable_name) > 99:
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
-                        error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
+                        error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                     else:
                         # check if there is already a variable with the same name
                         if variable_name in cond_search_str:
-                            error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                             variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                            error_msg = error_msg + query_name + ",["+ query_id +"]Variable already exists\n"
                         else:
                             cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                             cmp_computation.set('name', variable_name)
@@ -674,6 +691,7 @@ def convert_logic_file( logic_file ):
                             cond_search_str[variable_name] = variable_name
 
                             variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
 
             elif variable_type == "Constant":
                 variable_name = query_name
@@ -681,13 +699,13 @@ def convert_logic_file( logic_file ):
 
                 # @note Hotdocs has maximum lenght of 100 for variable name
                 if len(variable_name) > 99:
-                    error_msg = error_msg + "Maximum variable name length on " + query_name + "\n"
                     variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                    error_msg = error_msg + query_name + ",[" + query_id + "]Maximum variable name length reached\n"
                 else:
                     # check if there is already a variable with the same name
                     if variable_name in cond_search_str:
-                        error_msg = error_msg + variable_name + " already exists, see " + query_id + "\n"
                         variables[variable_type]["stats"]["error"] = int(variables[variable_type]["stats"]["error"]) + 1
+                        error_msg = error_msg + query_name + ",["+ query_id +"]Variable already exists\n"
                     else:
                         cmp_computation = ET.SubElement(cmp_components, '{'+namespace+'}computation')
                         cmp_computation.set('name', variable_name)
@@ -700,6 +718,7 @@ def convert_logic_file( logic_file ):
                             cmp_computation_script.text = "RESULT TRUE"
 
                         variables[variable_type]["stats"]["total"] = int(variables[variable_type]["stats"]["total"]) + 1
+                        variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
 
                         # add the variable name into search string
                         cond_search_str[variable_name] = variable_name
@@ -768,6 +787,7 @@ def convert_logic_file( logic_file ):
 
             # repeats in Hotdocs are controlled by Dialog variables so we only need this info for stats
             variables[variable_type]["stats"]["ignored"] = int(variables[variable_type]["stats"]["ignored"]) + 1
+            variable_replacement_list = variable_replacement_list + query_name + "," + variable_name + "CO" + "\n"
 
     # group together relevant variables
     for topic in variables["Data"].keys():
@@ -830,10 +850,15 @@ def convert_logic_file( logic_file ):
     with open(json_file_name, 'w') as f:
         json.dump(variables, f, indent=4)
 
-    report_file_name = Path(report_directory, str(Path(logic_file).stem + '.txt').lower())
+    report_file_name = Path(report_directory, str(Path(logic_file).stem + '.csv').lower())
     report_file = open(report_file_name,"w")
     report_file.write(error_msg)
     report_file.close()
+
+    variable_replacement_list_file_name = Path(report_directory, str(Path(logic_file).stem + '_replacement_list.csv').lower())
+    variable_replacement_list_file = open(variable_replacement_list_file_name,"w")
+    variable_replacement_list_file.write(variable_replacement_list)
+    variable_replacement_list_file.close()
 
     return tree
 
